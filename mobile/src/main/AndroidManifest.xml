@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
 
     <application
         android:allowBackup="true"
@@ -34,7 +33,7 @@
             android:permission="androidx.car.app.BIND_CAR_APP">
             <meta-data
                 android:name="androidx.car.app.category"
-                android:value="navigation" />
+                android:value="template" />
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
             </intent-filter>

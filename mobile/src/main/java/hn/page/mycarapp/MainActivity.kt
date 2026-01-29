@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.tasks.await
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.text.SimpleDateFormat
@@ -221,14 +222,13 @@ private fun LiveTrackingScreen(
     val targetLatLng = if (last != null) lastLatLng else (initialLatLng ?: lastLatLng)
 
     val cameraPositionState = rememberCameraPositionState {
-        val z = if (last != null || initialLatLng != null) savedZoom else 2f
-        position = CameraPosition.fromLatLngZoom(targetLatLng, z)
+        position = CameraPosition.fromLatLngZoom(targetLatLng, savedZoom)
     }
 
     androidx.compose.runtime.LaunchedEffect(savedZoom) {
-        if (last != null || initialLatLng != null) {
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(targetLatLng, savedZoom)
-        }
+        cameraPositionState.position = CameraPosition.Builder(cameraPositionState.position)
+            .zoom(savedZoom)
+            .build()
     }
 
     androidx.compose.runtime.LaunchedEffect(last?.latitude, last?.longitude) {
@@ -259,6 +259,7 @@ private fun LiveTrackingScreen(
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         snapshotFlow { cameraPositionState.position.zoom }
+            .drop(1)
             .distinctUntilChanged()
             .collectLatest { z ->
                 if (!isSliding) {
@@ -271,7 +272,7 @@ private fun LiveTrackingScreen(
     fun applyZoom(newZoom: Float) {
         val z = newZoom.coerceIn(2f, 20f)
         cameraPositionState.move(CameraUpdateFactory.zoomTo(z))
-        scope.launch { mapSettingsStore.setMapZoom(z) }
+        mapSettingsStore.setMapZoom(z)
     }
 
     fun focusToCurrent() {
@@ -868,6 +869,8 @@ private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Doubl
 }
 
 class MainActivity : ComponentActivity() {
+    private var pendingAutoStart = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -896,6 +899,51 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+        tryAutoStartTracking()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1001 || requestCode == 2001) {
+            tryAutoStartTracking()
+        }
+    }
+
+    private fun tryAutoStartTracking() {
+        if (!pendingAutoStart) return
+        if (TrackingServiceLocator.getRepository(this).state.value.isTracking) {
+            pendingAutoStart = false
+            return
+        }
+
+        if (!hasAnyLocationPermission()) {
+            ensureLocationPermissions()
+            return
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !hasPostNotificationsPermission()) {
+            ensureNotificationPermission()
+            return
+        }
+
+        pendingAutoStart = false
+        ForegroundTrackingService.start(this)
+    }
+
+    private fun hasAnyLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    private fun hasPostNotificationsPermission(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 33) return true
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun ensureNotificationPermission() {

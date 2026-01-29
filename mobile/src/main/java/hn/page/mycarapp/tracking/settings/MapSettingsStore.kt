@@ -1,24 +1,18 @@
 package hn.page.mycarapp.tracking.settings
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 
-private val Context.dataStore by preferencesDataStore(name = "map_settings")
+class MapSettingsStore(context: Context) {
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences("map_settings", Context.MODE_PRIVATE)
 
-class MapSettingsStore(private val context: Context) {
-    private val keyMapZoom = floatPreferencesKey("map_zoom")
+    private val _mapZoom = MutableStateFlow(prefs.getFloat("map_zoom", 16f))
+    val mapZoom: StateFlow<Float> = _mapZoom
 
-    val mapZoom: Flow<Float> = context.dataStore.data.map { prefs ->
-        prefs[keyMapZoom] ?: 16f
-    }
-
-    suspend fun setMapZoom(value: Float) {
-        context.dataStore.edit { prefs ->
-            prefs[keyMapZoom] = value
-        }
+    fun setMapZoom(value: Float) {
+        _mapZoom.value = value
+        prefs.edit().putFloat("map_zoom", value).apply()
     }
 }

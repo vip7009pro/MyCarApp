@@ -2,7 +2,6 @@ package hn.page.mycarapp.car
 
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
-import androidx.car.app.SurfaceCallback
 import androidx.car.app.annotations.ExperimentalCarApi
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
@@ -10,8 +9,6 @@ import androidx.car.app.model.Pane
 import androidx.car.app.model.PaneTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
-import androidx.car.app.navigation.model.MapController
-import androidx.car.app.navigation.model.MapWithContentTemplate
 import hn.page.mycarapp.tracking.TrackingServiceLocator
 import hn.page.mycarapp.tracking.TrackingState
 import hn.page.mycarapp.tracking.ForegroundTrackingService
@@ -32,28 +29,10 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
 
     private var latestState: TrackingState = TrackingState()
 
-    private val renderer = TrackSurfaceRenderer()
-    private var pointsJob: Job? = null
-    private var latestPointsTripId: Long? = null
-
-    private val surfaceCallback = object : SurfaceCallback {
-        override fun onSurfaceAvailable(surfaceContainer: androidx.car.app.SurfaceContainer) {
-            renderer.onSurfaceAvailable(surfaceContainer)
-            scope.launch {
-                renderer.render(loadPointsForLatestTrip())
-            }
-        }
-
-        override fun onSurfaceDestroyed(surfaceContainer: androidx.car.app.SurfaceContainer) {
-            renderer.onSurfaceDestroyed(surfaceContainer)
-        }
-    }
-
     init {
         collectJob = scope.launch {
             repo.state.collect {
                 latestState = it
-                scheduleRender()
                 invalidate()
             }
         }
@@ -61,56 +40,17 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 ForegroundTrackingService.start(carContext)
-                carContext.getCarService(androidx.car.app.AppManager::class.java)
-                    .setSurfaceCallback(surfaceCallback)
             }
 
             override fun onStop(owner: LifecycleOwner) {
-                carContext.getCarService(androidx.car.app.AppManager::class.java)
-                    .setSurfaceCallback(null)
-
                 ForegroundTrackingService.stop(carContext)
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
                 collectJob?.cancel()
                 collectJob = null
-
-                pointsJob?.cancel()
-                pointsJob = null
-
-                carContext.getCarService(androidx.car.app.AppManager::class.java)
-                    .setSurfaceCallback(null)
             }
         })
-    }
-
-    private suspend fun loadPointsForLatestTrip(): List<hn.page.mycarapp.tracking.db.TrackPointEntity> {
-        val tripId = latestState.tripId ?: return emptyList()
-        return repo.getTripPoints(tripId)
-    }
-
-    private fun scheduleRender() {
-        val tripId = latestState.tripId
-        if (tripId == null) {
-            latestPointsTripId = null
-            pointsJob?.cancel()
-            pointsJob = null
-            renderer.render(emptyList())
-            return
-        }
-
-        if (latestPointsTripId != tripId) {
-            latestPointsTripId = tripId
-        }
-
-        pointsJob?.cancel()
-        pointsJob = scope.launch(Dispatchers.IO) {
-            val points = repo.getTripPoints(tripId)
-            kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
-                renderer.render(points)
-            }
-        }
     }
 
     override fun onGetTemplate(): Template {
@@ -141,7 +81,7 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
             .build()
 
         val contentTemplate = PaneTemplate.Builder(pane)
-            .setTitle("MyCarApp")
+            .setTitle("Speed Tracker")
             .setHeaderAction(Action.APP_ICON)
             .build()
 
@@ -160,12 +100,10 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
             .addAction(startStopAction)
             .build()
 
-        val mapController = MapController.Builder().build()
-
-        return MapWithContentTemplate.Builder()
-            .setContentTemplate(contentTemplate)
+        return PaneTemplate.Builder(pane)
+            .setTitle("Speed Tracker")
+            .setHeaderAction(Action.APP_ICON)
             .setActionStrip(actionStrip)
-            .setMapController(mapController)
             .build()
     }
 }
