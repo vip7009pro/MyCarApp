@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.view.WindowCompat
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
@@ -129,6 +130,15 @@ private fun TripDetailScreen(tripId: Long) {
     androidx.compose.runtime.LaunchedEffect(points) {
         val bounds = pointsToBounds(points) ?: return@LaunchedEffect
         cameraPositionState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 80))
+
+        val start = points.firstOrNull() ?: return@LaunchedEffect
+        val end = points.lastOrNull() ?: return@LaunchedEffect
+        val bearing = bearingDegrees(start.latitude, start.longitude, end.latitude, end.longitude)
+        val current = cameraPositionState.position
+        val rotated = CameraPosition.Builder(current)
+            .bearing(bearing)
+            .build()
+        cameraPositionState.position = rotated
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -301,4 +311,16 @@ private fun pointsToBounds(points: List<TrackPointEntity>): LatLngBounds? {
     val sw = LatLng(minLat, minLng)
     val ne = LatLng(maxLat, maxLng)
     return LatLngBounds(sw, ne)
+}
+
+private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+    val phi1 = Math.toRadians(lat1)
+    val phi2 = Math.toRadians(lat2)
+    val dLambda = Math.toRadians(lon2 - lon1)
+
+    val y = Math.sin(dLambda) * Math.cos(phi2)
+    val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda)
+    val theta = Math.atan2(y, x)
+    val deg = (Math.toDegrees(theta) + 360.0) % 360.0
+    return deg.toFloat()
 }

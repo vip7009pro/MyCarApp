@@ -234,7 +234,17 @@ private fun LiveTrackingScreen(
     androidx.compose.runtime.LaunchedEffect(last?.latitude, last?.longitude) {
         if (last != null) {
             val z = cameraPositionState.position.zoom
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(lastLatLng, z)
+            val bearing = if (points.size >= 2 && last.speedMpsAdjusted >= 1.0f) {
+                val prev = points[points.size - 2]
+                bearingDegrees(prev.latitude, prev.longitude, last.latitude, last.longitude)
+            } else {
+                cameraPositionState.position.bearing
+            }
+            cameraPositionState.position = CameraPosition.Builder(cameraPositionState.position)
+                .target(lastLatLng)
+                .zoom(z)
+                .bearing(bearing)
+                .build()
         }
     }
 
@@ -843,6 +853,18 @@ private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Doub
         Math.sin(dLon / 2) * Math.sin(dLon / 2)
     val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return r * c
+}
+
+private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
+    val phi1 = Math.toRadians(lat1)
+    val phi2 = Math.toRadians(lat2)
+    val dLambda = Math.toRadians(lon2 - lon1)
+
+    val y = Math.sin(dLambda) * Math.cos(phi2)
+    val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda)
+    val theta = Math.atan2(y, x)
+    val deg = (Math.toDegrees(theta) + 360.0) % 360.0
+    return deg.toFloat()
 }
 
 class MainActivity : ComponentActivity() {
