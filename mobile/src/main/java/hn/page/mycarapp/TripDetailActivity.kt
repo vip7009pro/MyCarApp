@@ -147,7 +147,7 @@ private fun TripDetailScreen(tripId: Long) {
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState
             ) {
-                renderRoute(points)
+                renderRoute(points, cameraPositionState.position.zoom)
                 if (last != null) {
                     Marker(state = MarkerState(position = LatLng(last.latitude, last.longitude)), title = "End")
                 }
@@ -269,12 +269,27 @@ private suspend fun exportTrip(
 }
 
 @Composable
-private fun renderRoute(points: List<TrackPointEntity>) {
+private fun renderRoute(points: List<TrackPointEntity>, zoom: Float) {
     if (points.size < 2) return
 
-    for (i in 1 until points.size) {
-        val a = points[i - 1]
-        val b = points[i]
+    val simplified = remember(points, zoom) {
+        simplifyRoutePoints(points, zoom)
+    }
+    if (simplified.size < 2) return
+
+    val fallbackSinglePolylineThreshold = 800
+    if (simplified.size > fallbackSinglePolylineThreshold) {
+        Polyline(
+            points = simplified.map { LatLng(it.latitude, it.longitude) },
+            color = speedToColorKph((simplified.last().speedMpsAdjusted * 3.6f)),
+            width = 10f
+        )
+        return
+    }
+
+    for (i in 1 until simplified.size) {
+        val a = simplified[i - 1]
+        val b = simplified[i]
         val color = speedToColorKph(((a.speedMpsAdjusted + b.speedMpsAdjusted) * 0.5f) * 3.6f)
         Polyline(
             points = listOf(LatLng(a.latitude, a.longitude), LatLng(b.latitude, b.longitude)),
@@ -282,6 +297,55 @@ private fun renderRoute(points: List<TrackPointEntity>) {
             width = 10f
         )
     }
+}
+
+private fun simplifyRoutePoints(points: List<TrackPointEntity>, zoom: Float): List<TrackPointEntity> {
+    if (points.size <= 2) return points
+
+    val first = points.first()
+    val latitude = first.latitude
+    val metersPerPx = metersPerPixelAtLat(latitude, zoom)
+    val minDistanceMeters = (metersPerPx * 6.0).coerceAtLeast(5.0)
+    val maxPoints = 2000
+
+    val kept = ArrayList<TrackPointEntity>(minOf(points.size, maxPoints))
+    kept.add(first)
+    var lastKept = first
+
+    for (i in 1 until points.size - 1) {
+        val p = points[i]
+        val d = haversineMeters(lastKept.latitude, lastKept.longitude, p.latitude, p.longitude)
+        if (d >= minDistanceMeters) {
+            kept.add(p)
+            lastKept = p
+        }
+    }
+    val last = points.last()
+    kept.add(last)
+
+    if (kept.size <= maxPoints) return kept
+    return strideSample(kept, maxPoints)
+}
+
+private fun strideSample(points: List<TrackPointEntity>, maxPoints: Int): List<TrackPointEntity> {
+    if (points.size <= maxPoints) return points
+    if (maxPoints <= 2) return listOf(points.first(), points.last())
+
+    val out = ArrayList<TrackPointEntity>(maxPoints)
+    out.add(points.first())
+    val step = (points.size - 1).toDouble() / (maxPoints - 1).toDouble()
+    for (i in 1 until maxPoints - 1) {
+        val idx = (i * step).toInt().coerceIn(1, points.size - 2)
+        out.add(points[idx])
+    }
+    out.add(points.last())
+    return out
+}
+
+private fun metersPerPixelAtLat(latitude: Double, zoom: Float): Double {
+    val latRad = Math.toRadians(latitude)
+    val z = zoom.toDouble().coerceIn(2.0, 20.0)
+    return 156543.03392 * Math.cos(latRad) / Math.pow(2.0, z)
 }
 
 private fun speedToColorKph(speedKph: Float): Color {
@@ -323,4 +387,15 @@ private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Doubl
     val theta = Math.atan2(y, x)
     val deg = (Math.toDegrees(theta) + 360.0) % 360.0
     return deg.toFloat()
+}
+
+private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return r * c
 }

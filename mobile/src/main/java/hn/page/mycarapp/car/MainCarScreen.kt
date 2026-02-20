@@ -39,11 +39,9 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                ForegroundTrackingService.start(carContext)
             }
 
             override fun onStop(owner: LifecycleOwner) {
-                ForegroundTrackingService.stop(carContext)
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
