@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -54,6 +55,9 @@ import kotlin.math.max
 import kotlin.math.cos
 import kotlin.math.sin
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private fun unwrapToNearest(current: Float, target: Float): Float {
     var t = target
@@ -78,7 +82,11 @@ private fun offsetLatLng(from: LatLng, bearingDegrees: Float, distanceMeters: Do
 }
 
 @Composable
-fun TripReplayScreen(vm: TripReplayViewModel) {
+fun TripReplayScreen(
+    vm: TripReplayViewModel,
+    isRecording: Boolean,
+    onToggleRecording: () -> Unit
+) {
     val s by vm.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -87,6 +95,8 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
     val cameraPositionState = rememberCameraPositionState()
 
     val rotationAnim = remember { Animatable(0f) }
+
+    val latestState by rememberUpdatedState(s)
 
     LaunchedEffect(s.currentBearing) {
         val target = unwrapToNearest(current = rotationAnim.value, target = s.currentBearing)
@@ -104,28 +114,33 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
         cameraPositionState.move(CameraUpdateFactory.newLatLngZoom(first, 16f))
     }
 
-    LaunchedEffect(s.followCar, s.carPosition, s.currentSpeedMps, rotationAnim.value) {
-        if (!s.followCar) return@LaunchedEffect
-        val pos = s.carPosition ?: return@LaunchedEffect
+    LaunchedEffect(Unit) {
+        while (true) {
+            val st = latestState
+            if (st.followCar) {
+                val pos = st.carPosition
+                if (pos != null) {
+                    val speed = st.currentSpeedMps.coerceAtLeast(0f)
+                    val lookAheadMeters = (speed * 1.8f).coerceIn(15f, 120f)
+                    val bearing = rotationAnim.value
+                    val lookAhead = offsetLatLng(pos, bearing, lookAheadMeters.toDouble())
 
-        val speed = s.currentSpeedMps.coerceAtLeast(0f)
-        val lookAheadMeters = (speed * 1.8f).coerceIn(15f, 120f)
-        val lookAhead = offsetLatLng(pos, rotationAnim.value, lookAheadMeters.toDouble())
+                    val zoom = cameraPositionState.position.zoom.takeIf { it > 0f } ?: 17f
+                    val tilt = 62f
+                    val target = CameraPosition.Builder(cameraPositionState.position)
+                        .target(lookAhead)
+                        .zoom(zoom)
+                        .tilt(tilt)
+                        .bearing(bearing)
+                        .build()
 
-        val zoom = cameraPositionState.position.zoom.takeIf { it > 0f } ?: 17f
-        val tilt = 62f
-        val target = CameraPosition.Builder(cameraPositionState.position)
-            .target(lookAhead)
-            .zoom(zoom)
-            .tilt(tilt)
-            .bearing(rotationAnim.value)
-            .build()
-
-        // throttle animations: avoid spamming camera updates at 60fps
-        delay(80L)
-        try {
-            cameraPositionState.animate(CameraUpdateFactory.newCameraPosition(target))
-        } catch (_: Throwable) {
+                    try {
+                        cameraPositionState.animate(CameraUpdateFactory.newCameraPosition(target))
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+            delay(110L)
         }
     }
 
@@ -167,9 +182,20 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
 
             val carPos = s.carPosition
             if (carPos != null) {
+                val snippet = remember(s.tripStartedAtEpochMs, s.tripTimeMs, s.currentSpeedMps) {
+                    val speedText = String.format("%.1f km/h", s.currentSpeedMps * 3.6f)
+                    if (s.tripStartedAtEpochMs > 0L) {
+                        val fmt = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+                        val t = s.tripStartedAtEpochMs + s.tripTimeMs
+                        "${fmt.format(Instant.ofEpochMilli(t))} • $speedText"
+                    } else {
+                        "${formatTripTime(s.tripTimeMs)} • $speedText"
+                    }
+                }
                 Marker(
                     state = MarkerState(position = carPos),
                     title = "Car",
+                    snippet = snippet,
                     icon = carIcon,
                     anchor = Offset(0.5f, 0.5f),
                     rotation = rotationAnim.value,
@@ -188,6 +214,18 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
+                val tripTitle = (s.tripName?.takeIf { it.isNotBlank() } ?: "Trip #${s.tripId}")
+                val dateText = remember(s.tripStartedAtEpochMs) {
+                    if (s.tripStartedAtEpochMs > 0L) {
+                        val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
+                        fmt.format(Instant.ofEpochMilli(s.tripStartedAtEpochMs))
+                    } else ""
+                }
+                Text(
+                    text = if (dateText.isNotBlank()) "$tripTitle • $dateText" else tripTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     text = "${formatTripTime(s.tripTimeMs)} / ${formatTripTime(s.durationMs)}",
                     style = MaterialTheme.typography.titleMedium,
@@ -228,6 +266,13 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
                     ) {
                         Text(if (s.followCar) "Follow" else "Free")
                     }
+
+                    Button(
+                        onClick = onToggleRecording,
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Text(if (isRecording) "Stop" else "Record")
+                    }
                 }
 
                 Row(
@@ -241,6 +286,7 @@ fun TripReplayScreen(vm: TripReplayViewModel) {
                     SpeedButton(label = ReplaySpeed.X2.label, selected = s.speed == ReplaySpeed.X2) { vm.setSpeed(ReplaySpeed.X2) }
                     SpeedButton(label = ReplaySpeed.X5.label, selected = s.speed == ReplaySpeed.X5) { vm.setSpeed(ReplaySpeed.X5) }
                     SpeedButton(label = ReplaySpeed.X10.label, selected = s.speed == ReplaySpeed.X10) { vm.setSpeed(ReplaySpeed.X10) }
+                    SpeedButton(label = ReplaySpeed.X20.label, selected = s.speed == ReplaySpeed.X20) { vm.setSpeed(ReplaySpeed.X20) }
                 }
 
                 val duration = s.durationMs.coerceAtLeast(1L)

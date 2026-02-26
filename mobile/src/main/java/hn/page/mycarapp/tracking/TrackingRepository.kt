@@ -51,6 +51,8 @@ class TrackingRepository(context: Context) {
 
     suspend fun getTrips(): List<TripEntity> = tripDao.getAllTrips()
 
+    suspend fun getTripById(tripId: Long): TripEntity? = tripDao.getTripById(tripId)
+
     suspend fun renameTrip(tripId: Long, name: String?) {
         tripDao.renameTrip(tripId, name?.takeIf { it.isNotBlank() })
     }

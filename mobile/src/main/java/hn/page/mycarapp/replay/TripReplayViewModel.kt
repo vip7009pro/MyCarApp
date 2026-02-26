@@ -21,7 +21,8 @@ enum class ReplaySpeed(val multiplier: Float, val label: String) {
     X1(1f, "1x"),
     X2(2f, "2x"),
     X5(5f, "5x"),
-    X10(10f, "10x")
+    X10(10f, "10x"),
+    X20(20f, "20x")
 }
 
 data class ColoredPolyline(
@@ -32,6 +33,10 @@ data class ColoredPolyline(
 data class TripReplayUiState(
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+
+    val tripId: Long = -1,
+    val tripName: String? = null,
+    val tripStartedAtEpochMs: Long = 0L,
 
     val isPlaying: Boolean = false,
     val speed: ReplaySpeed = ReplaySpeed.X1,
@@ -74,8 +79,9 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        _uiState.update { TripReplayUiState(isLoading = true) }
+        _uiState.update { TripReplayUiState(isLoading = true, tripId = tripId) }
         viewModelScope.launch {
+            val trip = withContext(Dispatchers.IO) { repo.getTripById(tripId) }
             val points = withContext(Dispatchers.IO) { repo.getTripPoints(tripId) }
             if (points.size < 2) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Trip has no enough points") }
@@ -97,6 +103,9 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     isLoading = false,
                     errorMessage = null,
+                    tripId = tripId,
+                    tripName = trip?.name,
+                    tripStartedAtEpochMs = trip?.startedAtEpochMs ?: 0L,
                     durationMs = eng.durationMs,
                     tripTimeMs = 0L,
                     currentSpeedMps = firstFrame.speedMpsAdjusted,
