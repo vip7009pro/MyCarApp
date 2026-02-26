@@ -170,6 +170,16 @@ private fun TripDetailScreen(tripId: Long) {
                     Text("Points: ${points.size}", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
                     Button(
                         onClick = {
+                            val i = android.content.Intent(context, hn.page.mycarapp.replay.TripReplayActivity::class.java)
+                            i.putExtra(hn.page.mycarapp.replay.TripReplayActivity.EXTRA_TRIP_ID, tripId)
+                            context.startActivity(i)
+                        },
+                        modifier = Modifier.padding(top = 6.dp).height(40.dp)
+                    ) {
+                        Text("Replay")
+                    }
+                    Button(
+                        onClick = {
                             pendingExportTripId = tripId
                             createDoc.launch("trip_${tripId}.xlsx")
                         },
