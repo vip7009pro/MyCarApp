@@ -22,7 +22,11 @@ enum class ReplaySpeed(val multiplier: Float, val label: String) {
     X2(2f, "2x"),
     X5(5f, "5x"),
     X10(10f, "10x"),
-    X20(20f, "20x")
+    X20(20f, "20x"),
+    X25(25f, "25x"),
+    X30(30f, "30x"),
+    X35(35f, "35x"),
+    X40(40f, "40x")
 }
 
 data class ColoredPolyline(
@@ -50,14 +54,21 @@ data class TripReplayUiState(
     val segmentIndex: Int = 0,
 
     val speedSamplesKph: List<Float> = emptyList(),
+    val minSpeedKph: Float = 0f,
+    val avgSpeedKph: Float = 0f,
     val maxSpeedKph: Float = 0f,
+    val totalDistanceMeters: Double = 0.0,
 
     val fullRoute: List<com.google.android.gms.maps.model.LatLng> = emptyList(),
     val progressRoute: List<com.google.android.gms.maps.model.LatLng> = emptyList(),
     val progressColored: List<ColoredPolyline> = emptyList(),
     val carPosition: com.google.android.gms.maps.model.LatLng? = null,
 
-    val followCar: Boolean = true
+    val followCar: Boolean = true,
+
+    val isExportingVideo: Boolean = false,
+    val exportVideoUri: String? = null,
+    val exportErrorMessage: String? = null
 )
 
 class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
@@ -95,7 +106,15 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
             cachedProgressIndex = -1
 
             val samples = buildSpeedSamplesKph(eng, sampleCount = 120)
+            val sortedPoints = points.sortedBy { it.timestampEpochMs }
+            val minSpeed = sortedPoints.minOfOrNull { it.speedMpsAdjusted * 3.6f } ?: 0f
             val maxSpeed = samples.maxOrNull() ?: 0f
+            val totalDistance = computeTotalDistanceMeters(sortedPoints)
+            val avgSpeed = if (eng.durationMs > 0L) {
+                ((totalDistance / (eng.durationMs.toDouble() / 1000.0)) * 3.6).toFloat()
+            } else {
+                0f
+            }
 
             val firstFrame = eng.frameAt(0L)
             val colored0 = buildOrUpdateProgressColored(eng, firstFrame.segmentIndex, firstFrame.position)
@@ -113,7 +132,10 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
                     distanceTraveledMeters = firstFrame.distanceTraveledMeters,
                     segmentIndex = firstFrame.segmentIndex,
                     speedSamplesKph = samples,
+                    minSpeedKph = minSpeed,
+                    avgSpeedKph = avgSpeed,
                     maxSpeedKph = maxSpeed,
+                    totalDistanceMeters = totalDistance,
                     fullRoute = eng.fullRouteLatLng(),
                     progressRoute = eng.progressRouteLatLng(firstFrame),
                     progressColored = colored0,
@@ -121,6 +143,28 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    private fun computeTotalDistanceMeters(points: List<TrackPointEntity>): Double {
+        if (points.size < 2) return 0.0
+        var sum = 0.0
+        for (i in 1 until points.size) {
+            val a = points[i - 1]
+            val b = points[i]
+            sum += haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+        }
+        return sum
+    }
+
+    private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val x = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))
+        return r * c
     }
 
     private fun buildEngine(points: List<TrackPointEntity>): ReplayEngine {
@@ -319,6 +363,57 @@ class TripReplayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleFollowCar() {
         _uiState.update { it.copy(followCar = !it.followCar) }
+    }
+
+    fun exportReplayVideo() {
+        val current = _uiState.value
+        if (current.isExportingVideo) return
+        if (current.tripId <= 0) {
+            _uiState.update { it.copy(exportErrorMessage = "Invalid trip") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isExportingVideo = true,
+                exportVideoUri = null,
+                exportErrorMessage = null
+            )
+        }
+
+        val tripId = current.tripId
+        val tripName = current.tripName
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val points = repo.getTripPoints(tripId)
+                val result = TripReplayVideoExporter.export(
+                    context = getApplication(),
+                    tripId = tripId,
+                    tripName = tripName,
+                    points = points
+                )
+                _uiState.update {
+                    it.copy(
+                        isExportingVideo = false,
+                        exportVideoUri = result.uri.toString(),
+                        exportErrorMessage = null
+                    )
+                }
+            } catch (t: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isExportingVideo = false,
+                        exportVideoUri = null,
+                        exportErrorMessage = t.message ?: "Export failed"
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearExportNotifications() {
+        _uiState.update { it.copy(exportVideoUri = null, exportErrorMessage = null) }
     }
 
     override fun onCleared() {

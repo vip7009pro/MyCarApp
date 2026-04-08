@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -25,6 +26,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -124,6 +126,30 @@ private fun TripDetailScreen(tripId: Long) {
     val listPoints = remember(points) { points.asReversed() }
     var selectedLatLng by remember { mutableStateOf<LatLng?>(null) }
 
+    val totalDistanceMeters = remember(points) {
+        if (points.size < 2) {
+            0.0
+        } else {
+            var sum = 0.0
+            for (i in 1 until points.size) {
+                val a = points[i - 1]
+                val b = points[i]
+                sum += haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+            }
+            sum
+        }
+    }
+    val totalDurationMs = remember(points) {
+        val first = points.firstOrNull()?.timestampEpochMs ?: 0L
+        val lastTs = points.lastOrNull()?.timestampEpochMs ?: 0L
+        (lastTs - first).coerceAtLeast(0L)
+    }
+    val minSpeedKph = remember(points) { points.minOfOrNull { it.speedMpsAdjusted * 3.6f } ?: 0f }
+    val maxSpeedKph = remember(points) { points.maxOfOrNull { it.speedMpsAdjusted * 3.6f } ?: 0f }
+    val avgSpeedKph = remember(totalDistanceMeters, totalDurationMs) {
+        if (totalDurationMs > 0L) ((totalDistanceMeters / (totalDurationMs.toDouble() / 1000.0)) * 3.6).toFloat() else 0f
+    }
+
     val last = points.lastOrNull()
     val cameraPositionState = rememberCameraPositionState()
 
@@ -160,32 +186,49 @@ private fun TripDetailScreen(tripId: Long) {
             val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             Card(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .padding(start = 8.dp, end = 8.dp, top = topPad + 4.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                    .padding(start = 12.dp, end = 12.dp, top = topPad + 8.dp)
+                    .widthIn(max = 330.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text("Trip #$tripId", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
-                    Text("Points: ${points.size}", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
-                    Button(
-                        onClick = {
-                            val i = android.content.Intent(context, hn.page.mycarapp.replay.TripReplayActivity::class.java)
-                            i.putExtra(hn.page.mycarapp.replay.TripReplayActivity.EXTRA_TRIP_ID, tripId)
-                            context.startActivity(i)
-                        },
-                        modifier = Modifier.padding(top = 6.dp).height(40.dp)
-                    ) {
-                        Text("Replay")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Trip #$tripId", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+                        Text("${points.size} points • ${String.format("%.2f km", totalDistanceMeters / 1000.0)}", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            String.format("Avg %.1f  Min %.1f  Max %.1f km/h", avgSpeedKph, minSpeedKph, maxSpeedKph),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
-                    Button(
-                        onClick = {
-                            pendingExportTripId = tripId
-                            createDoc.launch("trip_${tripId}.xlsx")
-                        },
-                        modifier = Modifier.padding(top = 6.dp).height(40.dp)
-                    ) {
-                        Text("Export Excel")
+
+                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                        Button(
+                            onClick = {
+                                val i = android.content.Intent(context, hn.page.mycarapp.replay.TripReplayActivity::class.java)
+                                i.putExtra(hn.page.mycarapp.replay.TripReplayActivity.EXTRA_TRIP_ID, tripId)
+                                context.startActivity(i)
+                            },
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Text("Replay")
+                        }
+                        Button(
+                            onClick = {
+                                pendingExportTripId = tripId
+                                createDoc.launch("trip_${tripId}.xlsx")
+                            },
+                            modifier = Modifier.padding(top = 6.dp).height(34.dp)
+                        ) {
+                            Text("Excel")
+                        }
                     }
                 }
             }

@@ -14,11 +14,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -201,6 +203,15 @@ private fun LiveTrackingScreen(
     val points by (if (tripId != null) repo.getTripPointsFlow(tripId) else flowOf(emptyList()))
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val minSpeedKph = remember(points) {
+        points.minOfOrNull { it.speedMpsAdjusted * 3.6f } ?: 0f
+    }
+    val avgSpeedKph = if (s.movingTimeMs > 0L) {
+        ((s.distanceMeters / (s.movingTimeMs.toDouble() / 1000.0)) * 3.6).toFloat()
+    } else {
+        0f
+    }
+
     val last = points.lastOrNull()
     val lastLatLng = if (last != null) LatLng(last.latitude, last.longitude) else LatLng(0.0, 0.0)
 
@@ -305,16 +316,19 @@ private fun LiveTrackingScreen(
         val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         Card(
             modifier = Modifier
-                .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(start = 8.dp, end = 8.dp, top = topPad + 4.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .padding(start = 12.dp, end = 12.dp, top = topPad + 8.dp)
+                .widthIn(max = 340.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             MetricsHeader(
                 speedKph = s.speedMpsAdjusted * 3.6f,
                 distanceKm = s.distanceMeters / 1000.0,
                 movingTimeMs = s.movingTimeMs,
+                avgSpeedKph = avgSpeedKph,
+                minSpeedKph = minSpeedKph,
                 maxSpeedKph = s.maxSpeedMpsAdjusted * 3.6f,
                 startStopLabel = startStopLabel,
                 onStartStop = {
@@ -327,24 +341,25 @@ private fun LiveTrackingScreen(
 
         Card(
             modifier = Modifier
-                .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(8.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .padding(12.dp)
+                .widthIn(max = 320.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
         ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { focusToCurrent() },
-                        modifier = Modifier.height(40.dp)
+                        modifier = Modifier.height(34.dp)
                     ) {
                         Text("Focus")
                     }
 
                     Text(
                         String.format("Zoom: %.1f", cameraPositionState.position.zoom),
-                        modifier = Modifier.padding(start = 12.dp),
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -359,6 +374,7 @@ private fun LiveTrackingScreen(
                         isSliding = false
                         applyZoom(sliderZoom)
                     },
+                    modifier = Modifier.padding(top = 2.dp),
                     valueRange = 2f..20f,
                     steps = 35
                 )
@@ -753,6 +769,8 @@ private fun MetricsHeader(
     speedKph: Float,
     distanceKm: Double,
     movingTimeMs: Long,
+    avgSpeedKph: Float,
+    minSpeedKph: Float,
     maxSpeedKph: Float,
     startStopLabel: String,
     onStartStop: () -> Unit
@@ -762,31 +780,60 @@ private fun MetricsHeader(
     val mm = timeSec / 60
     val ss = timeSec % 60
 
-    Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(String.format("%.1f km/h", speedKph), style = MaterialTheme.typography.headlineSmall, color = fg)
+                Text(String.format("%.1f km/h", speedKph), style = MaterialTheme.typography.titleLarge, color = fg)
                 Text("Speed", style = MaterialTheme.typography.labelSmall, color = fg)
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(String.format("%.2f km", distanceKm), style = MaterialTheme.typography.titleLarge, color = fg)
-                Text("Distance", style = MaterialTheme.typography.labelSmall, color = fg)
+
+            Button(onClick = onStartStop, modifier = Modifier.height(34.dp)) {
+                Text(startStopLabel, style = MaterialTheme.typography.labelLarge)
             }
         }
 
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(String.format("%02d:%02d", mm, ss), style = MaterialTheme.typography.titleLarge, color = fg)
-                Text("Moving time", style = MaterialTheme.typography.labelSmall, color = fg)
+                Text(String.format("%.2f km", distanceKm), style = MaterialTheme.typography.titleMedium, color = fg)
+                Text("Total", style = MaterialTheme.typography.labelSmall, color = fg)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(String.format("%.1f km/h", maxSpeedKph), style = MaterialTheme.typography.titleLarge, color = fg)
+                Text(String.format("%.1f km/h", avgSpeedKph), style = MaterialTheme.typography.titleMedium, color = fg)
+                Text("Avg", style = MaterialTheme.typography.labelSmall, color = fg)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(String.format("%02d:%02d", mm, ss), style = MaterialTheme.typography.titleMedium, color = fg)
+                Text("Moving", style = MaterialTheme.typography.labelSmall, color = fg)
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(String.format("%.1f km/h", minSpeedKph), style = MaterialTheme.typography.titleMedium, color = fg)
+                Text("Min", style = MaterialTheme.typography.labelSmall, color = fg)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(String.format("%.1f km/h", maxSpeedKph), style = MaterialTheme.typography.titleMedium, color = fg)
                 Text("Max", style = MaterialTheme.typography.labelSmall, color = fg)
             }
-        }
-
-        Button(onClick = onStartStop, modifier = Modifier.padding(top = 8.dp).height(40.dp)) {
-            Text(startStopLabel)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(String.format("%.1f km/h", speedKph), style = MaterialTheme.typography.titleMedium, color = fg)
+                Text("Now", style = MaterialTheme.typography.labelSmall, color = fg)
+            }
         }
     }
 }

@@ -85,7 +85,8 @@ private fun offsetLatLng(from: LatLng, bearingDegrees: Float, distanceMeters: Do
 fun TripReplayScreen(
     vm: TripReplayViewModel,
     isRecording: Boolean,
-    onToggleRecording: () -> Unit
+    onToggleRecording: () -> Unit,
+    onExportVideo: () -> Unit
 ) {
     val s by vm.uiState.collectAsStateWithLifecycle()
 
@@ -236,6 +237,16 @@ fun TripReplayScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Text(
+                    text = String.format("Total %.2f km", s.totalDistanceMeters / 1000.0),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = String.format("Avg %.1f  Min %.1f  Max %.1f km/h", s.avgSpeedKph, s.minSpeedKph, s.maxSpeedKph),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
 
@@ -275,6 +286,17 @@ fun TripReplayScreen(
                     }
                 }
 
+                Button(
+                    onClick = onExportVideo,
+                    enabled = !s.isExportingVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .height(42.dp)
+                ) {
+                    Text(if (s.isExportingVideo) "Exporting MP4..." else "Export MP4 (Offline)")
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -287,6 +309,18 @@ fun TripReplayScreen(
                     SpeedButton(label = ReplaySpeed.X5.label, selected = s.speed == ReplaySpeed.X5) { vm.setSpeed(ReplaySpeed.X5) }
                     SpeedButton(label = ReplaySpeed.X10.label, selected = s.speed == ReplaySpeed.X10) { vm.setSpeed(ReplaySpeed.X10) }
                     SpeedButton(label = ReplaySpeed.X20.label, selected = s.speed == ReplaySpeed.X20) { vm.setSpeed(ReplaySpeed.X20) }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    SpeedButton(label = ReplaySpeed.X25.label, selected = s.speed == ReplaySpeed.X25) { vm.setSpeed(ReplaySpeed.X25) }
+                    SpeedButton(label = ReplaySpeed.X30.label, selected = s.speed == ReplaySpeed.X30) { vm.setSpeed(ReplaySpeed.X30) }
+                    SpeedButton(label = ReplaySpeed.X35.label, selected = s.speed == ReplaySpeed.X35) { vm.setSpeed(ReplaySpeed.X35) }
+                    SpeedButton(label = ReplaySpeed.X40.label, selected = s.speed == ReplaySpeed.X40) { vm.setSpeed(ReplaySpeed.X40) }
                 }
 
                 val duration = s.durationMs.coerceAtLeast(1L)
@@ -313,7 +347,7 @@ fun TripReplayScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = String.format("%.2f km", s.distanceTraveledMeters / 1000.0),
+                        text = String.format("%.2f / %.2f km", s.distanceTraveledMeters / 1000.0, s.totalDistanceMeters / 1000.0),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )

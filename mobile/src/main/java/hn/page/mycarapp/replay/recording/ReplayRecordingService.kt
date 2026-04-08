@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -69,6 +70,9 @@ class ReplayRecordingService : Service() {
         // startForeground()/getMediaProjection ordering deadlock, we obtain the MediaProjection
         // instance in the Activity and hand it to this Service via a static holder.
         val projection = consumePendingProjection() ?: run {
+            val fallback = tryCreateProjectionFromResult(resultCode, data)
+            fallback
+        } ?: run {
             sendStatusBroadcast(isRecording = false, outputUri = null)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -153,6 +157,16 @@ class ReplayRecordingService : Service() {
             sendStatusBroadcast(isRecording = false, outputUri = null)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+        }
+    }
+
+    private fun tryCreateProjectionFromResult(resultCode: Int, data: Intent?): MediaProjection? {
+        if (resultCode != Activity.RESULT_OK || data == null) return null
+        return try {
+            val pm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            pm.getMediaProjection(resultCode, data)
+        } catch (_: Throwable) {
+            null
         }
     }
 

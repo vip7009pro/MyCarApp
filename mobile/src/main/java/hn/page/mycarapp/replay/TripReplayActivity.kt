@@ -8,6 +8,9 @@ import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -25,6 +28,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import hn.page.mycarapp.MyCarAppTheme
 import hn.page.mycarapp.replay.recording.ReplayRecordingService
 
@@ -43,8 +47,17 @@ class TripReplayActivity : ComponentActivity() {
                 val view = LocalView.current
                 val dark = isSystemInDarkTheme()
                 val statusBarColor = androidx.compose.material3.MaterialTheme.colorScheme.surface
+                val uiState by vm.uiState.collectAsStateWithLifecycle()
 
                 var isRecording by remember { mutableStateOf(false) }
+
+                val requestNotifications = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    if (!granted && Build.VERSION.SDK_INT >= 33) {
+                        Toast.makeText(this@TripReplayActivity, "Notification permission denied. Recording may fail.", Toast.LENGTH_SHORT).show()
+                    }
+                }
 
                 val statusReceiver = remember {
                     object : BroadcastReceiver() {
@@ -117,6 +130,18 @@ class TripReplayActivity : ComponentActivity() {
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
                 }
 
+                LaunchedEffect(uiState.exportVideoUri, uiState.exportErrorMessage) {
+                    val uri = uiState.exportVideoUri
+                    val err = uiState.exportErrorMessage
+                    if (!uri.isNullOrBlank()) {
+                        Toast.makeText(this@TripReplayActivity, "Exported video: $uri", Toast.LENGTH_LONG).show()
+                        vm.clearExportNotifications()
+                    } else if (!err.isNullOrBlank()) {
+                        Toast.makeText(this@TripReplayActivity, "Export failed: $err", Toast.LENGTH_LONG).show()
+                        vm.clearExportNotifications()
+                    }
+                }
+
                 TripReplayScreen(
                     vm = vm,
                     isRecording = isRecording,
@@ -127,8 +152,19 @@ class TripReplayActivity : ComponentActivity() {
                             }
                             startService(stop)
                         } else {
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(
+                                    this@TripReplayActivity,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
                             requestCapture.launch(projectionManager.createScreenCaptureIntent())
                         }
+                    },
+                    onExportVideo = {
+                        vm.exportReplayVideo()
                     }
                 )
             }
