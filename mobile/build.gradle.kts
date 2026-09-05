@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     id("kotlin-kapt")
 }
 
@@ -15,13 +16,13 @@ val localProperties = Properties().apply {
 
 android {
     namespace = "hn.page.mycarapp"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "hn.page.mycarapp"
         minSdk = 28
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -29,9 +30,19 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = localProperties.getProperty("MAPS_API_KEY") ?: ""
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = "speedtracker"
+            keyPassword = "Anhtaday_87"
+            storeFile = file("G:/NODEJS/speedtracker.jks")
+            storePassword = "Anhtaday_87"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -48,10 +59,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 }
 
