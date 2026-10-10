@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 class TrackingRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -100,6 +103,78 @@ class TrackingRepository(context: Context) {
             currentTripId = null
             _state.value = _state.value.copy(isTracking = false, tripId = null)
         }
+    }
+
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        val trips = tripDao.getAllTrips()
+        val root = JSONObject()
+        root.put("version", 1)
+        root.put("exportedAtEpochMs", System.currentTimeMillis())
+
+        val tripsArray = JSONArray()
+        for (trip in trips) {
+            val tripObj = JSONObject()
+            tripObj.put("id", trip.id)
+            tripObj.put("name", trip.name ?: "")
+            tripObj.put("startedAtEpochMs", trip.startedAtEpochMs)
+            tripObj.put("endedAtEpochMs", trip.endedAtEpochMs ?: JSONObject.NULL)
+
+            val points = trackPointDao.getPointsForTrip(trip.id)
+            val pointsArray = JSONArray()
+            for (p in points) {
+                val pObj = JSONObject()
+                pObj.put("timestampEpochMs", p.timestampEpochMs)
+                pObj.put("latitude", p.latitude)
+                pObj.put("longitude", p.longitude)
+                pObj.put("speedMpsRaw", p.speedMpsRaw.toDouble())
+                pObj.put("speedMpsAdjusted", p.speedMpsAdjusted.toDouble())
+                pointsArray.put(pObj)
+            }
+            tripObj.put("points", pointsArray)
+            tripsArray.put(tripObj)
+        }
+
+        root.put("trips", tripsArray)
+        root.toString(2)
+    }
+
+    suspend fun importBackupJson(jsonString: String): Int = withContext(Dispatchers.IO) {
+        val root = JSONObject(jsonString)
+        val tripsArray = root.optJSONArray("trips") ?: return@withContext 0
+
+        var importedCount = 0
+        for (i in 0 until tripsArray.length()) {
+            val tripObj = tripsArray.getJSONObject(i)
+            val name = tripObj.optString("name").takeIf { it.isNotBlank() }
+            val startedAtEpochMs = tripObj.optLong("startedAtEpochMs", System.currentTimeMillis())
+            val endedAtEpochMs = if (tripObj.isNull("endedAtEpochMs")) null else tripObj.optLong("endedAtEpochMs")
+
+            val newTripId = tripDao.insert(
+                TripEntity(
+                    name = name,
+                    startedAtEpochMs = startedAtEpochMs,
+                    endedAtEpochMs = endedAtEpochMs
+                )
+            )
+
+            val pointsArray = tripObj.optJSONArray("points")
+            if (pointsArray != null) {
+                for (j in 0 until pointsArray.length()) {
+                    val pObj = pointsArray.getJSONObject(j)
+                    val p = TrackPointEntity(
+                        tripId = newTripId,
+                        timestampEpochMs = pObj.optLong("timestampEpochMs"),
+                        latitude = pObj.optDouble("latitude"),
+                        longitude = pObj.optDouble("longitude"),
+                        speedMpsRaw = pObj.optDouble("speedMpsRaw").toFloat(),
+                        speedMpsAdjusted = pObj.optDouble("speedMpsAdjusted").toFloat()
+                    )
+                    trackPointDao.insert(p)
+                }
+            }
+            importedCount++
+        }
+        importedCount
     }
 
     @SuppressLint("MissingPermission")

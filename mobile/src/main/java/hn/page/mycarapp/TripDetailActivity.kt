@@ -1,5 +1,6 @@
 package hn.page.mycarapp
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -7,27 +8,43 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +56,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -52,16 +71,17 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
+import hn.page.mycarapp.tracking.TrackingRepository
 import hn.page.mycarapp.tracking.TrackingServiceLocator
 import hn.page.mycarapp.tracking.db.TrackPointEntity
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class TripDetailActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +92,7 @@ class TripDetailActivity : ComponentActivity() {
             MyCarAppTheme {
                 val view = LocalView.current
                 val dark = isSystemInDarkTheme()
-                val statusBarColor = MaterialTheme.colorScheme.surface
+                val statusBarColor = MaterialTheme.colorScheme.background
 
                 SideEffect {
                     val window = this@TripDetailActivity.window
@@ -80,7 +100,10 @@ class TripDetailActivity : ComponentActivity() {
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
                 }
 
-                TripDetailScreen(tripId = tripId)
+                TripDetailScreen(
+                    tripId = tripId,
+                    onBack = { finish() }
+                )
             }
         }
     }
@@ -91,13 +114,16 @@ class TripDetailActivity : ComponentActivity() {
 }
 
 @Composable
-private fun TripDetailScreen(tripId: Long) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+private fun TripDetailScreen(
+    tripId: Long,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember { TrackingServiceLocator.getRepository(context) }
 
     val tz = remember { ZoneId.systemDefault() }
-    val timeFmt = remember { DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(tz) }
+    val timeFmt = remember { DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy").withZone(tz) }
 
     var pendingExportTripId by remember { mutableStateOf<Long?>(null) }
 
@@ -118,7 +144,7 @@ private fun TripDetailScreen(tripId: Long) {
             value = emptyList()
             return@produceState
         }
-        value = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        value = withContext(Dispatchers.IO) {
             repo.getTripPoints(tripId)
         }
     }
@@ -150,16 +176,23 @@ private fun TripDetailScreen(tripId: Long) {
         if (totalDurationMs > 0L) ((totalDistanceMeters / (totalDurationMs.toDouble() / 1000.0)) * 3.6).toFloat() else 0f
     }
 
+    val durationSec = totalDurationMs / 1000
+    val hh = durationSec / 3600
+    val mm = (durationSec % 3600) / 60
+    val ss = durationSec % 60
+    val formattedDuration = if (hh > 0) String.format(Locale.US, "%02d:%02d:%02d", hh, mm, ss) else String.format(Locale.US, "%02d:%02d", mm, ss)
+
     val last = points.lastOrNull()
+    val first = points.firstOrNull()
     val cameraPositionState = rememberCameraPositionState()
 
-    androidx.compose.runtime.LaunchedEffect(points) {
+    LaunchedEffect(points) {
         val bounds = pointsToBounds(points) ?: return@LaunchedEffect
-        cameraPositionState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 80))
+        cameraPositionState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 100))
 
-        val start = points.firstOrNull() ?: return@LaunchedEffect
-        val end = points.lastOrNull() ?: return@LaunchedEffect
-        val bearing = bearingDegrees(start.latitude, start.longitude, end.latitude, end.longitude)
+        val startPoint = points.firstOrNull() ?: return@LaunchedEffect
+        val endPoint = points.lastOrNull() ?: return@LaunchedEffect
+        val bearing = bearingDegrees(startPoint.latitude, startPoint.longitude, endPoint.latitude, endPoint.longitude)
         val current = cameraPositionState.position
         val rotated = CameraPosition.Builder(current)
             .bearing(bearing)
@@ -168,109 +201,275 @@ private fun TripDetailScreen(tripId: Long) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxWidth().weight(2f)) {
+        Box(modifier = Modifier.fillMaxWidth().weight(1.8f)) {
             GoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState
             ) {
                 renderRoute(points, cameraPositionState.position.zoom)
+                if (first != null) {
+                    Marker(state = MarkerState(position = LatLng(first.latitude, first.longitude)), title = "Điểm bắt đầu")
+                }
                 if (last != null) {
-                    Marker(state = MarkerState(position = LatLng(last.latitude, last.longitude)), title = "End")
+                    Marker(state = MarkerState(position = LatLng(last.latitude, last.longitude)), title = "Điểm kết thúc")
                 }
 
                 if (selectedLatLng != null) {
-                    Marker(state = MarkerState(position = selectedLatLng!!), title = "Selected")
+                    Marker(state = MarkerState(position = selectedLatLng!!), title = "Điểm được chọn")
                 }
             }
 
             val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            
+            // Floating Header Bar
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(start = 12.dp, end = 12.dp, top = topPad + 8.dp)
-                    .widthIn(max = 330.dp),
-                shape = RoundedCornerShape(16.dp),
+                    .widthIn(max = 420.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Trip #$tripId", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
-                        Text("${points.size} points • ${String.format("%.2f km", totalDistanceMeters / 1000.0)}", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            String.format("Avg %.1f  Min %.1f  Max %.1f km/h", avgSpeedKph, minSpeedKph, maxSpeedKph),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
+                            }
+                            Column {
+                                Text(
+                                    text = "Chuyến đi #$tripId",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "${points.size} điểm tọa độ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Button(
+                                onClick = {
+                                    val i = Intent(context, hn.page.mycarapp.replay.TripReplayActivity::class.java)
+                                    i.putExtra(hn.page.mycarapp.replay.TripReplayActivity.EXTRA_TRIP_ID, tripId)
+                                    context.startActivity(i)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.height(38.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text("Xem lại", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    pendingExportTripId = tripId
+                                    createDoc.launch("trip_${tripId}.xlsx")
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.height(38.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text("Excel", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+                        }
                     }
 
-                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                        Button(
-                            onClick = {
-                                val i = android.content.Intent(context, hn.page.mycarapp.replay.TripReplayActivity::class.java)
-                                i.putExtra(hn.page.mycarapp.replay.TripReplayActivity.EXTRA_TRIP_ID, tripId)
-                                context.startActivity(i)
-                            },
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("Replay")
-                        }
-                        Button(
-                            onClick = {
-                                pendingExportTripId = tripId
-                                createDoc.launch("trip_${tripId}.xlsx")
-                            },
-                            modifier = Modifier.padding(top = 6.dp).height(34.dp)
-                        ) {
-                            Text("Excel")
-                        }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Stats Grid
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DetailTile(
+                            modifier = Modifier.weight(1f),
+                            label = "QUÃNG ĐƯỜNG",
+                            value = String.format(Locale.US, "%.2f", totalDistanceMeters / 1000.0),
+                            unit = "km"
+                        )
+                        DetailTile(
+                            modifier = Modifier.weight(1f),
+                            label = "THỜI GIAN",
+                            value = formattedDuration,
+                            unit = ""
+                        )
+                        DetailTile(
+                            modifier = Modifier.weight(1f),
+                            label = "TỐC ĐỘ TB",
+                            value = String.format(Locale.US, "%.1f", avgSpeedKph),
+                            unit = "km/h"
+                        )
+                        DetailTile(
+                            modifier = Modifier.weight(1f),
+                            label = "TỐI ĐA",
+                            value = String.format(Locale.US, "%.1f", maxSpeedKph),
+                            unit = "km/h"
+                        )
                     }
                 }
             }
         }
 
+        // Track Points List
         Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             color = MaterialTheme.colorScheme.background
         ) {
-            LazyColumn(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                items(listPoints) { p ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selectedLatLng = LatLng(p.latitude, p.longitude)
-                                val z = cameraPositionState.position.zoom
-                                scope.launch {
-                                    cameraPositionState.animate(
-                                        CameraUpdateFactory.newLatLngZoom(
-                                            selectedLatLng!!,
-                                            z
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Text(
+                    text = "Chi tiết các điểm ghi nhận",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(listPoints) { p ->
+                        val speedKph = p.speedMpsAdjusted * 3.6f
+                        val isSelected = selectedLatLng?.latitude == p.latitude && selectedLatLng?.longitude == p.longitude
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedLatLng = LatLng(p.latitude, p.longitude)
+                                    val z = cameraPositionState.position.zoom
+                                    scope.launch {
+                                        cameraPositionState.animate(
+                                            CameraUpdateFactory.newLatLngZoom(
+                                                selectedLatLng!!,
+                                                z
+                                            )
                                         )
+                                    }
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = timeFmt.format(Instant.ofEpochMilli(p.timestampEpochMs)),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                Surface(
+                                    color = speedToColorKph(speedKph).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = String.format(Locale.US, "%.1f km/h", speedKph),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = speedToColorKph(speedKph)
                                     )
                                 }
                             }
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Text(
-                            timeFmt.format(Instant.ofEpochMilli(p.timestampEpochMs)),
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            String.format("%.1f km/h", p.speedMpsAdjusted * 3.6f),
-                            modifier = Modifier.padding(start = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailTile(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    unit: String
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+            if (unit.isNotEmpty()) {
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -279,7 +478,7 @@ private fun TripDetailScreen(tripId: Long) {
 private suspend fun exportTrip(
     uri: Uri,
     tripId: Long,
-    repo: hn.page.mycarapp.tracking.TrackingRepository,
+    repo: TrackingRepository,
     context: android.content.Context
 ) {
     val points = repo.getTripPoints(tripId)
@@ -335,7 +534,7 @@ private fun renderRoute(points: List<TrackPointEntity>, zoom: Float) {
         Polyline(
             points = simplified.map { LatLng(it.latitude, it.longitude) },
             color = speedToColorKph((simplified.last().speedMpsAdjusted * 3.6f)),
-            width = 10f
+            width = 12f
         )
         return
     }
@@ -347,7 +546,7 @@ private fun renderRoute(points: List<TrackPointEntity>, zoom: Float) {
         Polyline(
             points = listOf(LatLng(a.latitude, a.longitude), LatLng(b.latitude, b.longitude)),
             color = color,
-            width = 10f
+            width = 12f
         )
     }
 }
@@ -401,13 +600,13 @@ private fun metersPerPixelAtLat(latitude: Double, zoom: Float): Double {
     return 156543.03392 * Math.cos(latRad) / Math.pow(2.0, z)
 }
 
-private fun speedToColorKph(speedKph: Float): Color {
+private fun speedToColorKph(kph: Float): Color {
     return when {
-        speedKph < 10f -> Color(0xFF00C853)
-        speedKph < 30f -> Color(0xFF64DD17)
-        speedKph < 50f -> Color(0xFFFFD600)
-        speedKph < 80f -> Color(0xFFFF6D00)
-        else -> Color(0xFFD50000)
+        kph < 20f -> Color(0xFF00E5FF)
+        kph < 40f -> Color(0xFF22C55E)
+        kph < 70f -> Color(0xFFEAB308)
+        kph < 100f -> Color(0xFFF97316)
+        else -> Color(0xFFEF4444)
     }
 }
 

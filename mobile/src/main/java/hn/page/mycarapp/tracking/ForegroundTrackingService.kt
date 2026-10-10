@@ -39,7 +39,10 @@ class ForegroundTrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        val autoLaunch = intent?.getBooleanExtra(EXTRA_AUTO_LAUNCH, false) ?: false
+
+        when (action) {
             ACTION_START -> {
                 val repo = TrackingServiceLocator.getRepository(this)
                 try {
@@ -47,6 +50,10 @@ class ForegroundTrackingService : Service() {
                 } catch (_: Throwable) {
                     stopSelf()
                     return START_NOT_STICKY
+                }
+
+                if (autoLaunch) {
+                    launchMainActivity()
                 }
 
                 if (stateJob == null) {
@@ -85,6 +92,16 @@ class ForegroundTrackingService : Service() {
         return START_STICKY
     }
 
+    private fun launchMainActivity() {
+        try {
+            val launchIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(launchIntent)
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun hasPostNotificationsPermission(): Boolean {
         return ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
@@ -99,8 +116,9 @@ class ForegroundTrackingService : Service() {
         val contentText =
             String.format("%.1f km/h | %.2f km | %ds | max %.1f", speedKph, distanceKm, timeSec, maxKph)
 
-        val openIntent = Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
 
         val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -110,6 +128,11 @@ class ForegroundTrackingService : Service() {
 
         val contentPi = PendingIntent.getActivity(this, 0, openIntent, piFlags)
 
+        val fullScreenIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val fullScreenPi = PendingIntent.getActivity(this, 1002, fullScreenIntent, piFlags)
+
         val stopIntent = Intent(this, ForegroundTrackingService::class.java).setAction(ACTION_STOP)
         val stopPi = PendingIntent.getService(this, 1, stopIntent, piFlags)
 
@@ -118,8 +141,11 @@ class ForegroundTrackingService : Service() {
             .setContentTitle("MyCarApp Tracking")
             .setContentText(contentText)
             .setContentIntent(contentPi)
+            .setFullScreenIntent(fullScreenPi, true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
             .setOngoing(true)
-            .addAction(0, "Stop", stopPi)
+            .addAction(0, "Dừng", stopPi)
             .build()
     }
 
@@ -129,20 +155,25 @@ class ForegroundTrackingService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Tracking",
-            NotificationManager.IMPORTANCE_LOW
-        )
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
         nm.createNotificationChannel(channel)
     }
 
     companion object {
         const val ACTION_START = "hn.page.mycarapp.tracking.action.START"
         const val ACTION_STOP = "hn.page.mycarapp.tracking.action.STOP"
+        const val EXTRA_AUTO_LAUNCH = "extra_auto_launch"
 
-        private const val CHANNEL_ID = "tracking"
+        private const val CHANNEL_ID = "tracking_high"
         private const val NOTIF_ID = 1001
 
-        fun start(context: Context) {
-            val i = Intent(context, ForegroundTrackingService::class.java).setAction(ACTION_START)
+        fun start(context: Context, autoLaunch: Boolean = false) {
+            val i = Intent(context, ForegroundTrackingService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_AUTO_LAUNCH, autoLaunch)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
             } else {

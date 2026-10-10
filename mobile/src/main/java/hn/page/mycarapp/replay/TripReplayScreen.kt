@@ -8,20 +8,29 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,35 +38,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
-import kotlin.math.max
-import kotlin.math.cos
-import kotlin.math.sin
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.sin
 
 private fun unwrapToNearest(current: Float, target: Float): Float {
     var t = target
@@ -94,9 +106,7 @@ fun TripReplayScreen(
     val carIcon = remember { bitmapDescriptorFromVector(context, hn.page.mycarapp.R.drawable.ic_car) }
 
     val cameraPositionState = rememberCameraPositionState()
-
     val rotationAnim = remember { Animatable(0f) }
-
     val latestState by rememberUpdatedState(s)
 
     LaunchedEffect(s.currentBearing) {
@@ -184,7 +194,7 @@ fun TripReplayScreen(
             val carPos = s.carPosition
             if (carPos != null) {
                 val snippet = remember(s.tripStartedAtEpochMs, s.tripTimeMs, s.currentSpeedMps) {
-                    val speedText = String.format("%.1f km/h", s.currentSpeedMps * 3.6f)
+                    val speedText = String.format(Locale.US, "%.1f km/h", s.currentSpeedMps * 3.6f)
                     if (s.tripStartedAtEpochMs > 0L) {
                         val fmt = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
                         val t = s.tripStartedAtEpochMs + s.tripTimeMs
@@ -195,7 +205,7 @@ fun TripReplayScreen(
                 }
                 Marker(
                     state = MarkerState(position = carPos),
-                    title = "Car",
+                    title = "Xe",
                     snippet = snippet,
                     icon = carIcon,
                     anchor = Offset(0.5f, 0.5f),
@@ -206,101 +216,173 @@ fun TripReplayScreen(
         }
 
         val topPad = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        
+        // Top HUD Overlay Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(start = 12.dp, end = 12.dp, top = topPad + 8.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-                val tripTitle = (s.tripName?.takeIf { it.isNotBlank() } ?: "Trip #${s.tripId}")
+            Column(modifier = Modifier.padding(14.dp)) {
+                val tripTitle = (s.tripName?.takeIf { it.isNotBlank() } ?: "Chuyến đi #${s.tripId}")
                 val dateText = remember(s.tripStartedAtEpochMs) {
                     if (s.tripStartedAtEpochMs > 0L) {
                         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
                         fmt.format(Instant.ofEpochMilli(s.tripStartedAtEpochMs))
                     } else ""
                 }
-                Text(
-                    text = if (dateText.isNotBlank()) "$tripTitle • $dateText" else tripTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${formatTripTime(s.tripTimeMs)} / ${formatTripTime(s.durationMs)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = String.format("%.1f km/h", s.currentSpeedMps * 3.6f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = String.format("Total %.2f km", s.totalDistanceMeters / 1000.0),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = String.format("Avg %.1f  Min %.1f  Max %.1f km/h", s.avgSpeedKph, s.minSpeedKph, s.maxSpeedKph),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(12.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Column {
+                        Text(
+                            text = tripTitle,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (dateText.isNotBlank()) {
+                            Text(
+                                text = dateText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Speedometer Badge
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = String.format(Locale.US, "%.0f", s.currentSpeedMps * 3.6f),
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 28.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "km/h",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ReplayTile(
+                        modifier = Modifier.weight(1f),
+                        label = "TIẾN TRÌNH",
+                        value = "${formatTripTime(s.tripTimeMs)} / ${formatTripTime(s.durationMs)}"
+                    )
+                    ReplayTile(
+                        modifier = Modifier.weight(1f),
+                        label = "QUÃNG ĐƯỜNG",
+                        value = String.format(Locale.US, "%.2f km", s.totalDistanceMeters / 1000.0)
+                    )
+                    ReplayTile(
+                        modifier = Modifier.weight(1f),
+                        label = "TBÌNH",
+                        value = String.format(Locale.US, "%.1f km/h", s.avgSpeedKph)
+                    )
+                    ReplayTile(
+                        modifier = Modifier.weight(1f),
+                        label = "TỐI ĐA",
+                        value = String.format(Locale.US, "%.1f km/h", s.maxSpeedKph)
+                    )
+                }
+            }
+        }
+
+        // Bottom Replay Controls Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(12.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Button(
                         onClick = { vm.togglePlayPause() },
-                        modifier = Modifier.height(44.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
                     ) {
-                        Text(if (s.isPlaying) "Pause" else "Play")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(if (s.isPlaying) "Tạm dừng" else "Phát", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                        }
                     }
 
                     Button(
                         onClick = { vm.toggleFollowCar() },
-                        modifier = Modifier.height(44.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (s.followCar) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (s.followCar) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
                     ) {
-                        Text(if (s.followCar) "Follow" else "Free")
+                        Text(
+                            text = if (s.followCar) "Theo xe: Bật" else "Theo xe: Tắt",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
 
                     Button(
                         onClick = onToggleRecording,
-                        modifier = Modifier.height(44.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRecording) Color(0xFFDC2626) else MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (isRecording) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
                     ) {
-                        Text(if (isRecording) "Stop" else "Record")
+                        Text(
+                            text = if (isRecording) "Đang quay..." else "Quay màn hình",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
                 }
 
-                Button(
-                    onClick = onExportVideo,
-                    enabled = !s.isExportingVideo,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(42.dp)
-                ) {
-                    Text(if (s.isExportingVideo) "Exporting MP4..." else "Export MP4 (Offline)")
-                }
+                Spacer(modifier = Modifier.height(10.dp))
 
+                // Speed Selectors
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     SpeedButton(label = ReplaySpeed.X0_5.label, selected = s.speed == ReplaySpeed.X0_5) { vm.setSpeed(ReplaySpeed.X0_5) }
@@ -311,25 +393,13 @@ fun TripReplayScreen(
                     SpeedButton(label = ReplaySpeed.X20.label, selected = s.speed == ReplaySpeed.X20) { vm.setSpeed(ReplaySpeed.X20) }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    SpeedButton(label = ReplaySpeed.X25.label, selected = s.speed == ReplaySpeed.X25) { vm.setSpeed(ReplaySpeed.X25) }
-                    SpeedButton(label = ReplaySpeed.X30.label, selected = s.speed == ReplaySpeed.X30) { vm.setSpeed(ReplaySpeed.X30) }
-                    SpeedButton(label = ReplaySpeed.X35.label, selected = s.speed == ReplaySpeed.X35) { vm.setSpeed(ReplaySpeed.X35) }
-                    SpeedButton(label = ReplaySpeed.X40.label, selected = s.speed == ReplaySpeed.X40) { vm.setSpeed(ReplaySpeed.X40) }
-                }
-
                 val duration = s.durationMs.coerceAtLeast(1L)
                 Slider(
                     value = (s.tripTimeMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f),
                     onValueChange = { frac ->
                         vm.seekTo((frac * duration.toFloat()).toLong())
                     },
-                    modifier = Modifier.padding(top = 10.dp)
+                    modifier = Modifier.padding(top = 6.dp)
                 )
 
                 SpeedMiniChart(
@@ -338,26 +408,67 @@ fun TripReplayScreen(
                     progress = (s.tripTimeMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 10.dp)
-                        .height(56.dp)
+                        .padding(top = 6.dp)
+                        .height(48.dp)
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = onExportVideo,
+                    enabled = !s.isExportingVideo,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
                 ) {
                     Text(
-                        text = String.format("%.2f / %.2f km", s.distanceTraveledMeters / 1000.0, s.totalDistanceMeters / 1000.0),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = s.speed.label,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = if (s.isExportingVideo) "Đang xuất video MP4..." else "Xuất video MP4 (Offline)",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReplayTile(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
         }
     }
 }
@@ -422,15 +533,15 @@ private fun SpeedButton(label: String, selected: Boolean, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .padding(horizontal = 2.dp)
-            .height(34.dp),
+            .height(32.dp),
         shape = RoundedCornerShape(10.dp),
         colors = colors,
         onClick = onClick
     ) {
-        Box(modifier = Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -442,7 +553,7 @@ private fun formatTripTime(ms: Long): String {
     val h = d.toHours()
     val m = (d.toMinutes() % 60)
     val s = (d.seconds % 60)
-    return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
+    return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s) else String.format(Locale.US, "%02d:%02d", m, s)
 }
 
 private fun bitmapDescriptorFromVector(context: Context, vectorResId: Int): BitmapDescriptor {

@@ -1,45 +1,49 @@
 package hn.page.mycarapp
 
-import android.content.Intent
 import android.os.Bundle
-import android.widget.ArrayAdapter
-import android.widget.ListView
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import hn.page.mycarapp.tracking.TrackingServiceLocator
-import hn.page.mycarapp.tracking.db.TripEntity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
-class TripsActivity : AppCompatActivity() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
+class TripsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_trips)
 
-        val listView = findViewById<ListView>(R.id.tripsList)
         val repo = TrackingServiceLocator.getRepository(this)
 
-        scope.launch {
-            val trips = repo.getTrips()
-            val items = trips.map { it.toDisplayString() }
-            val adapter = ArrayAdapter(this@TripsActivity, android.R.layout.simple_list_item_1, items)
-            listView.adapter = adapter
+        setContent {
+            MyCarAppTheme {
+                val view = LocalView.current
+                val dark = isSystemInDarkTheme()
+                val statusBarColor = MaterialTheme.colorScheme.background
 
-            listView.setOnItemClickListener { _, _, position, _ ->
-                val tripId = trips[position].id
-                startActivity(
-                    Intent(this@TripsActivity, TripDetailActivity::class.java)
-                        .putExtra(TripDetailActivity.EXTRA_TRIP_ID, tripId)
-                )
+                SideEffect {
+                    val window = this@TripsActivity.window
+                    window.statusBarColor = statusBarColor.toArgb()
+                    WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
+                }
+
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { padding ->
+                    HistoryScreen(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        repo = repo
+                    )
+                }
             }
         }
-    }
-
-    private fun TripEntity.toDisplayString(): String {
-        val end = endedAtEpochMs ?: 0L
-        return "Trip #$id  start=$startedAtEpochMs  end=$end"
     }
 }
