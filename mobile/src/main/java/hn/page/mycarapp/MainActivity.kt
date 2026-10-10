@@ -16,6 +16,7 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,6 +66,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -84,6 +86,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -93,6 +96,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -295,6 +299,20 @@ private fun MainApp(
 
     val settingsStore = remember { AppSettingsStore(ctx) }
     val autoStartOnOpen by settingsStore.autoStartOnOpen.collectAsStateWithLifecycle()
+    val keepScreenOn by settingsStore.keepScreenOn.collectAsStateWithLifecycle()
+
+    val window = (ctx as? ComponentActivity)?.window
+
+    DisposableEffect(keepScreenOn) {
+        if (keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (autoStartOnOpen && !repo.state.value.isTracking) {
@@ -706,6 +724,8 @@ private fun LiveHudScreen(
     onStartStop: () -> Unit,
     onToggleHudMode: () -> Unit
 ) {
+    var isMirrored by remember { mutableStateOf(false) }
+
     val timeSec = movingTimeMs / 1000
     val hh = timeSec / 3600
     val mm = (timeSec % 3600) / 60
@@ -716,6 +736,10 @@ private fun LiveHudScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .graphicsLayer(
+                scaleX = if (isMirrored) -1f else 1f,
+                scaleY = if (isMirrored) -1f else 1f
+            )
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
@@ -726,49 +750,41 @@ private fun LiveHudScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Button(
-                onClick = onToggleHudMode,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = onToggleHudMode,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text("Bản đồ", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text("Bản đồ", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
                 }
-            }
 
-            // Status Indicator
-            Surface(
-                color = if (isTracking) Color(0xFF16A34A).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Button(
+                    onClick = { isMirrored = !isMirrored },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isMirrored) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (isMirrored) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(
-                                color = if (isTracking) Color(0xFF22C55E) else Color(0xFFEF4444),
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                    )
                     Text(
-                        text = if (isTracking) "ĐANG THEO DÕI" else "ĐÃ DỪNG",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = if (isTracking) Color(0xFF22C55E) else Color(0xFFEF4444)
+                        text = if (isMirrored) "Lật gương: BẬT" else "Lật gương (HUD)",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }
@@ -781,7 +797,7 @@ private fun LiveHudScreen(
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1193,6 +1209,7 @@ private fun SettingsScreen(
     val settingsStore = remember { AppSettingsStore(context) }
 
     val autoStartOnOpen by settingsStore.autoStartOnOpen.collectAsStateWithLifecycle()
+    val keepScreenOn by settingsStore.keepScreenOn.collectAsStateWithLifecycle()
     val speedOffsetKph by settingsStore.speedOffsetKph.collectAsStateWithLifecycle()
     val bluetoothEnabled by settingsStore.bluetoothEnabled.collectAsStateWithLifecycle()
     val wifiEnabled by settingsStore.wifiEnabled.collectAsStateWithLifecycle()
@@ -1289,10 +1306,10 @@ private fun SettingsScreen(
         Toast.makeText(context, "Đã cập nhật danh sách Wi-Fi xung quanh", Toast.LENGTH_SHORT).show()
     }
 
-    val hasOverlayPermission = if (android.os.Build.VERSION.SDK_INT >= 23) Settings.canDrawOverlays(context) else true
+    val hasOverlayPermission = Settings.canDrawOverlays(context)
     val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
     val isIgnoringBattery = try {
-        if (android.os.Build.VERSION.SDK_INT >= 23 && pm != null) pm.isIgnoringBatteryOptimizations(context.packageName) else true
+        if (pm != null) pm.isIgnoringBatteryOptimizations(context.packageName) else true
     } catch (_: Throwable) {
         true
     }
@@ -1352,13 +1369,11 @@ private fun SettingsScreen(
                         if (!hasOverlayPermission) {
                             Button(
                                 onClick = {
-                                    if (android.os.Build.VERSION.SDK_INT >= 23) {
-                                        val intent = Intent(
-                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${context.packageName}")
-                                        )
-                                        context.startActivity(intent)
-                                    }
+                                    val intent = Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    context.startActivity(intent)
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1393,13 +1408,11 @@ private fun SettingsScreen(
                         if (!isIgnoringBattery) {
                             Button(
                                 onClick = {
-                                    if (android.os.Build.VERSION.SDK_INT >= 23) {
-                                        val intent = Intent(
-                                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                            Uri.parse("package:${context.packageName}")
-                                        )
-                                        context.startActivity(intent)
-                                    }
+                                    val intent = Intent(
+                                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    context.startActivity(intent)
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -1413,7 +1426,46 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 1: Auto start on open
+        // Setting 1: Keep screen on
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Không tắt màn hình",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Giữ màn hình luôn sáng khi ứng dụng đang mở (thích hợp khi lái xe).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = keepScreenOn,
+                        onCheckedChange = { checked ->
+                            settingsStore.setKeepScreenOn(checked)
+                        }
+                    )
+                }
+            }
+        }
+
+        // Setting 2: Auto start on open
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1452,7 +1504,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 2: Speed Offset Slider
+        // Setting 3: Speed Offset Slider
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1562,7 +1614,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 3: Bluetooth Auto Start / Stop
+        // Setting 4: Bluetooth Auto Start / Stop
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1739,7 +1791,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 4: Wi-Fi Auto Start / Stop (Condition OR)
+        // Setting 5: Wi-Fi Auto Start / Stop (Condition OR)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1905,6 +1957,10 @@ fun HistoryScreen(
     var renameText by remember { mutableStateOf("") }
     var deleteTripId by remember { mutableStateOf<Long?>(null) }
 
+    var isProcessingProgress by remember { mutableStateOf(false) }
+    var progressPercent by remember { mutableIntStateOf(0) }
+    var progressStatusText by remember { mutableStateOf("") }
+
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
     val createDoc = rememberLauncherForActivityResult(
@@ -1913,7 +1969,21 @@ fun HistoryScreen(
         val ids = pendingExportTripIds
         pendingExportTripIds = emptyList()
         if (uri != null && ids.isNotEmpty()) {
-            scope.launch { exportTrips(uri, ids, repo, context) }
+            scope.launch {
+                isProcessingProgress = true
+                progressPercent = 0
+                progressStatusText = "Đang chuẩn bị xuất Excel..."
+                try {
+                    exportTrips(uri, ids, repo, context) { percent, status ->
+                        progressPercent = percent
+                        progressStatusText = status
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Lỗi xuất Excel: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessingProgress = false
+                }
+            }
         }
     }
 
@@ -1922,15 +1992,21 @@ fun HistoryScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
+                isProcessingProgress = true
+                progressPercent = 0
+                progressStatusText = "Đang chuẩn bị sao lưu..."
                 try {
-                    val json = repo.exportBackupJson()
                     context.contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(json.toByteArray(Charsets.UTF_8))
-                        out.flush()
+                        repo.exportBackupJsonStream(out) { percent, status ->
+                            progressPercent = percent
+                            progressStatusText = status
+                        }
                     }
                     Toast.makeText(context, "Sao lưu dữ liệu thành công!", Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     Toast.makeText(context, "Lỗi khi sao lưu: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessingProgress = false
                 }
             }
         }
@@ -1941,17 +2017,25 @@ fun HistoryScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
+                isProcessingProgress = true
+                progressPercent = 0
+                progressStatusText = "Đang đọc file khôi phục..."
                 try {
-                    val json = context.contentResolver.openInputStream(uri)?.use { input ->
-                        input.bufferedReader(Charsets.UTF_8).readText()
-                    }
-                    if (!json.isNullOrBlank()) {
-                        val count = repo.importBackupJson(json)
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        val count = inputStream.use { input ->
+                            repo.importBackupJsonStream(input) { percent, status ->
+                                progressPercent = percent
+                                progressStatusText = status
+                            }
+                        }
                         trips = repo.getTrips()
                         Toast.makeText(context, "Khôi phục thành công $count chuyến đi!", Toast.LENGTH_LONG).show()
                     }
                 } catch (e: Exception) {
                     Toast.makeText(context, "Lỗi khi khôi phục dữ liệu: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessingProgress = false
                 }
             }
         }
@@ -1968,6 +2052,41 @@ fun HistoryScreen(
             .fillMaxSize()
             .padding(14.dp)
     ) {
+        if (isProcessingProgress) {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Đang xử lý dữ liệu...") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { progressPercent / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "$progressPercent%",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = progressStatusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                confirmButton = {}
+            )
+        }
+
         if (renameTripId != null) {
             AlertDialog(
                 onDismissRequest = { renameTripId = null },
@@ -2514,15 +2633,21 @@ private suspend fun exportTrips(
     uri: Uri,
     tripIds: List<Long>,
     repo: TrackingRepository,
-    context: android.content.Context
-) {
+    context: android.content.Context,
+    onProgress: (percent: Int, status: String) -> Unit
+) = withContext(Dispatchers.IO) {
     val wb = XSSFWorkbook()
 
     val tz = ZoneId.systemDefault()
     val isoFmt = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(tz)
     val prettyFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(tz)
 
-    for (tripId in tripIds) {
+    val total = tripIds.size.coerceAtLeast(1)
+
+    for ((index, tripId) in tripIds.withIndex()) {
+        val percent = (((index + 1).toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+        onProgress(percent, "Đang tạo sheet chuyến đi ${index + 1}/$total...")
+
         val points = repo.getTripPoints(tripId)
         val sheet = wb.createSheet("trip_$tripId")
 
@@ -2551,11 +2676,13 @@ private suspend fun exportTrips(
         }
     }
 
+    onProgress(95, "Đang ghi file Excel...")
     (context.contentResolver).openOutputStream(uri)?.use { out ->
         wb.write(out)
         out.flush()
     }
     wb.close()
+    onProgress(100, "Hoàn tất xuất Excel!")
 }
 
 @Composable

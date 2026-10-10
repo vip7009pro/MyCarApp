@@ -26,6 +26,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 class TrackingRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -105,45 +106,72 @@ class TrackingRepository(context: Context) {
         }
     }
 
-    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+    suspend fun exportBackupJsonStream(
+        outputStream: java.io.OutputStream,
+        onProgress: (percent: Int, status: String) -> Unit
+    ) = withContext(Dispatchers.IO) {
         val trips = tripDao.getAllTrips()
-        val root = JSONObject()
-        root.put("version", 1)
-        root.put("exportedAtEpochMs", System.currentTimeMillis())
+        val totalTrips = trips.size.coerceAtLeast(1)
 
-        val tripsArray = JSONArray()
-        for (trip in trips) {
-            val tripObj = JSONObject()
-            tripObj.put("id", trip.id)
-            tripObj.put("name", trip.name ?: "")
-            tripObj.put("startedAtEpochMs", trip.startedAtEpochMs)
-            tripObj.put("endedAtEpochMs", trip.endedAtEpochMs ?: JSONObject.NULL)
+        outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write("{\n")
+            writer.write("  \"version\": 1,\n")
+            writer.write("  \"exportedAtEpochMs\": ${System.currentTimeMillis()},\n")
+            writer.write("  \"trips\": [\n")
 
-            val points = trackPointDao.getPointsForTrip(trip.id)
-            val pointsArray = JSONArray()
-            for (p in points) {
-                val pObj = JSONObject()
-                pObj.put("timestampEpochMs", p.timestampEpochMs)
-                pObj.put("latitude", p.latitude)
-                pObj.put("longitude", p.longitude)
-                pObj.put("speedMpsRaw", p.speedMpsRaw.toDouble())
-                pObj.put("speedMpsAdjusted", p.speedMpsAdjusted.toDouble())
-                pointsArray.put(pObj)
+            for ((index, trip) in trips.withIndex()) {
+                val percent = (((index + 1).toFloat() / totalTrips.toFloat()) * 100).toInt().coerceIn(0, 100)
+                onProgress(percent, "Đang sao lưu chuyến đi ${index + 1}/$totalTrips...")
+
+                writer.write("    {\n")
+                writer.write("      \"id\": ${trip.id},\n")
+                writer.write("      \"name\": \"${trip.name?.replace("\\", "\\\\")?.replace("\"", "\\\"") ?: ""}\",\n")
+                writer.write("      \"startedAtEpochMs\": ${trip.startedAtEpochMs},\n")
+                val endedStr = trip.endedAtEpochMs?.toString() ?: "null"
+                writer.write("      \"endedAtEpochMs\": $endedStr,\n")
+                writer.write("      \"points\": [\n")
+
+                val points = trackPointDao.getPointsForTrip(trip.id)
+                for ((pIdx, p) in points.withIndex()) {
+                    writer.write(
+                        String.format(
+                            Locale.US,
+                            "        {\"timestampEpochMs\":%d,\"latitude\":%.7f,\"longitude\":%.7f,\"speedMpsRaw\":%.3f,\"speedMpsAdjusted\":%.3f}%s\n",
+                            p.timestampEpochMs,
+                            p.latitude,
+                            p.longitude,
+                            p.speedMpsRaw,
+                            p.speedMpsAdjusted,
+                            if (pIdx < points.size - 1) "," else ""
+                        )
+                    )
+                }
+
+                writer.write("      ]\n")
+                writer.write("    }${if (index < trips.size - 1) "," else ""}\n")
             }
-            tripObj.put("points", pointsArray)
-            tripsArray.put(tripObj)
-        }
 
-        root.put("trips", tripsArray)
-        root.toString(2)
+            writer.write("  ]\n")
+            writer.write("}\n")
+            writer.flush()
+        }
+        onProgress(100, "Hoàn tất sao lưu!")
     }
 
-    suspend fun importBackupJson(jsonString: String): Int = withContext(Dispatchers.IO) {
+    suspend fun importBackupJsonStream(
+        inputStream: java.io.InputStream,
+        onProgress: (percent: Int, status: String) -> Unit
+    ): Int = withContext(Dispatchers.IO) {
+        val jsonString = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         val root = JSONObject(jsonString)
         val tripsArray = root.optJSONArray("trips") ?: return@withContext 0
+        val total = tripsArray.length().coerceAtLeast(1)
 
         var importedCount = 0
         for (i in 0 until tripsArray.length()) {
+            val percent = (((i + 1).toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100)
+            onProgress(percent, "Đang khôi phục chuyến đi ${i + 1}/$total...")
+
             val tripObj = tripsArray.getJSONObject(i)
             val name = tripObj.optString("name").takeIf { it.isNotBlank() }
             val startedAtEpochMs = tripObj.optLong("startedAtEpochMs", System.currentTimeMillis())
@@ -174,6 +202,7 @@ class TrackingRepository(context: Context) {
             }
             importedCount++
         }
+        onProgress(100, "Hoàn tất khôi phục!")
         importedCount
     }
 

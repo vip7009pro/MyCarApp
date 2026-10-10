@@ -11,6 +11,9 @@ class AppSettingsStore(context: Context) {
     private val _autoStartOnOpen = MutableStateFlow(prefs.getBoolean("auto_start_on_open", false))
     val autoStartOnOpen: StateFlow<Boolean> = _autoStartOnOpen
 
+    private val _keepScreenOn = MutableStateFlow(prefs.getBoolean("keep_screen_on", true))
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn
+
     private val _speedOffsetKph = MutableStateFlow(prefs.getFloat("speed_offset_kph", 0f))
     val speedOffsetKph: StateFlow<Float> = _speedOffsetKph
 
@@ -41,6 +44,11 @@ class AppSettingsStore(context: Context) {
     fun setAutoStartOnOpen(value: Boolean) {
         _autoStartOnOpen.value = value
         prefs.edit().putBoolean("auto_start_on_open", value).apply()
+    }
+
+    fun setKeepScreenOn(value: Boolean) {
+        _keepScreenOn.value = value
+        prefs.edit().putBoolean("keep_screen_on", value).apply()
     }
 
     fun setSpeedOffsetKph(value: Float) {
