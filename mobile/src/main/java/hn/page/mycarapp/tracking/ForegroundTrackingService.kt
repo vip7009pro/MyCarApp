@@ -46,7 +46,7 @@ class ForegroundTrackingService : Service() {
             ACTION_START -> {
                 val repo = TrackingServiceLocator.getRepository(this)
                 try {
-                    startForeground(NOTIF_ID, buildNotification(repo.state.value))
+                    startForeground(NOTIF_ID, buildNotification(repo.state.value, isFirstLaunch = true))
                 } catch (_: Throwable) {
                     stopSelf()
                     return START_NOT_STICKY
@@ -62,7 +62,7 @@ class ForegroundTrackingService : Service() {
                             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                             try {
                                 if (Build.VERSION.SDK_INT < 33 || hasPostNotificationsPermission()) {
-                                    nm.notify(NOTIF_ID, buildNotification(s))
+                                    nm.notify(NOTIF_ID, buildNotification(s, isFirstLaunch = false))
                                 }
                             } catch (_: Throwable) {
                             }
@@ -107,7 +107,7 @@ class ForegroundTrackingService : Service() {
             PackageManager.PERMISSION_GRANTED
     }
 
-    private fun buildNotification(state: TrackingState): Notification {
+    private fun buildNotification(state: TrackingState, isFirstLaunch: Boolean = false): Notification {
         val speedKph = state.speedMpsAdjusted * 3.6f
         val maxKph = state.maxSpeedMpsAdjusted * 3.6f
         val distanceKm = state.distanceMeters / 1000.0
@@ -136,17 +136,24 @@ class ForegroundTrackingService : Service() {
         val stopIntent = Intent(this, ForegroundTrackingService::class.java).setAction(ACTION_STOP)
         val stopPi = PendingIntent.getService(this, 1, stopIntent, piFlags)
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("MyCarApp Tracking")
             .setContentText(contentText)
             .setContentIntent(contentPi)
-            .setFullScreenIntent(fullScreenPi, true)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setOnlyAlertOnce(true)
+            .setSound(null)
+            .setVibrate(longArrayOf(0L))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)
             .addAction(0, "Dừng", stopPi)
-            .build()
+
+        if (isFirstLaunch) {
+            builder.setFullScreenIntent(fullScreenPi, true)
+        }
+
+        return builder.build()
     }
 
     private fun ensureChannel() {
@@ -155,9 +162,12 @@ class ForegroundTrackingService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Tracking",
-            NotificationManager.IMPORTANCE_HIGH
+            NotificationManager.IMPORTANCE_LOW
         ).apply {
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            enableVibration(false)
+            vibrationPattern = longArrayOf(0L)
+            setSound(null, null)
         }
         nm.createNotificationChannel(channel)
     }
@@ -167,7 +177,7 @@ class ForegroundTrackingService : Service() {
         const val ACTION_STOP = "hn.page.mycarapp.tracking.action.STOP"
         const val EXTRA_AUTO_LAUNCH = "extra_auto_launch"
 
-        private const val CHANNEL_ID = "tracking_high"
+        private const val CHANNEL_ID = "tracking_quiet"
         private const val NOTIF_ID = 1001
 
         fun start(context: Context, autoLaunch: Boolean = false) {
