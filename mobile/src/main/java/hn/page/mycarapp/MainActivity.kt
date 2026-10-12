@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
@@ -98,6 +99,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -724,7 +726,11 @@ private fun LiveHudScreen(
     onStartStop: () -> Unit,
     onToggleHudMode: () -> Unit
 ) {
-    var isMirrored by remember { mutableStateOf(false) }
+    var isFlipHorizontal by remember { mutableStateOf(true) }
+    var isFlipVertical by remember { mutableStateOf(false) }
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val timeSec = movingTimeMs / 1000
     val hh = timeSec / 3600
@@ -732,130 +738,105 @@ private fun LiveHudScreen(
     val ss = timeSec % 60
     val formattedTime = if (hh > 0) String.format(Locale.US, "%02d:%02d:%02d", hh, mm, ss) else String.format(Locale.US, "%02d:%02d", mm, ss)
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .graphicsLayer(
-                scaleX = if (isMirrored) -1f else 1f,
-                scaleY = if (isMirrored) -1f else 1f
-            )
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Top Action Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(
-                    onClick = onToggleHudMode,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text("Bản đồ", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                    }
-                }
-
-                Button(
-                    onClick = { isMirrored = !isMirrored },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isMirrored) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (isMirrored) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = if (isMirrored) "Lật gương: BẬT" else "Lật gương (HUD)",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
-            }
-
-            // Big Ergonomic Start/Stop Button
+    val topActions = @Composable {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Button(
-                onClick = onStartStop,
+                onClick = onToggleHudMode,
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isTracking) Color(0xFFDC2626) else Color(0xFF16A34A),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
-                shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.height(36.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    if (isTracking) {
-                        StopSquareIcon(modifier = Modifier.size(14.dp))
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Text(
-                        text = if (isTracking) "Dừng" else "Bắt đầu",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
                     )
+                    Text("Bản đồ", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                 }
             }
-        }
 
-        // Giant Speedometer Center Display
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(vertical = 16.dp)
-        ) {
-            Text(
-                text = String.format(Locale.US, "%.0f", speedKph),
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontWeight = FontWeight.Black,
-                    fontSize = 110.sp,
-                    letterSpacing = (-2).sp
+            Button(
+                onClick = { isFlipHorizontal = !isFlipHorizontal },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isFlipHorizontal) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (isFlipHorizontal) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 ),
-                color = if (speedKph > 100) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
-            )
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.padding(top = 4.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.height(36.dp)
             ) {
                 Text(
-                    text = "KM / H",
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    text = if (isFlipHorizontal) "Lật ngang: BẬT" else "Lật ngang",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
+            Button(
+                onClick = { isFlipVertical = !isFlipVertical },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isFlipVertical) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (isFlipVertical) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text(
+                    text = if (isFlipVertical) "Lật dọc: BẬT" else "Lật dọc",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
                 )
             }
         }
+    }
 
-        // Stats Cards Grid
+    val startStopBtn = @Composable {
+        Button(
+            onClick = onStartStop,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isTracking) Color(0xFFDC2626) else Color(0xFF16A34A),
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.height(36.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (isTracking) {
+                    StopSquareIcon(modifier = Modifier.size(12.dp))
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    text = if (isTracking) "Dừng" else "Bắt đầu",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        }
+    }
+
+    val statsGrid = @Composable {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 HudStatCard(
                     modifier = Modifier.weight(1f),
@@ -873,7 +854,7 @@ private fun LiveHudScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 HudStatCard(
                     modifier = Modifier.weight(1f),
@@ -893,6 +874,119 @@ private fun LiveHudScreen(
                     value = String.format(Locale.US, "%.1f", maxSpeedKph),
                     unit = "km/h"
                 )
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .graphicsLayer(
+                scaleX = if (isFlipHorizontal) -1f else 1f,
+                scaleY = if (isFlipVertical) -1f else 1f
+            )
+            .padding(14.dp)
+    ) {
+        if (isLandscape) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left Side: Giant Speedometer Display
+                Column(
+                    modifier = Modifier.weight(1.1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.0f", speedKph),
+                        style = MaterialTheme.typography.displayLarge.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 140.sp,
+                            letterSpacing = (-4).sp
+                        ),
+                        color = if (speedKph > 100) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = "KM / H",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                // Right Side: Action Controls & Stats Grid
+                Column(
+                    modifier = Modifier.weight(0.9f),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        topActions()
+                        startStopBtn()
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    statsGrid()
+                }
+            }
+        } else {
+            // Portrait Layout
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    topActions()
+                    startStopBtn()
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.0f", speedKph),
+                        style = MaterialTheme.typography.displayLarge.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 110.sp,
+                            letterSpacing = (-2).sp
+                        ),
+                        color = if (speedKph > 100) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = "KM / H",
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                statsGrid()
             }
         }
     }
@@ -2867,6 +2961,24 @@ fun LiveHudScreenPreview() {
             avgSpeedKph = 54.2f,
             minSpeedKph = 0.0f,
             maxSpeedKph = 92.5f,
+            isTracking = true,
+            onStartStop = {},
+            onToggleHudMode = {}
+        )
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, widthDp = 800, heightDp = 400)
+@Composable
+fun LiveHudScreenLandscapePreview() {
+    MyCarAppTheme(darkTheme = true) {
+        LiveHudScreen(
+            speedKph = 88f,
+            distanceKm = 42.10,
+            movingTimeMs = 3120000L,
+            avgSpeedKph = 62.4f,
+            minSpeedKph = 0.0f,
+            maxSpeedKph = 105.0f,
             isTracking = true,
             onStartStop = {},
             onToggleHudMode = {}
