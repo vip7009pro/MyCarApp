@@ -2,7 +2,6 @@ package hn.page.mycarapp.car
 
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
-import androidx.car.app.annotations.ExperimentalCarApi
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.Pane
@@ -20,8 +19,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import java.util.Locale
 
-@ExperimentalCarApi
 class MainCarScreen(carContext: CarContext) : Screen(carContext) {
     private val repo = TrackingServiceLocator.getRepository(carContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -52,55 +51,42 @@ class MainCarScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     override fun onGetTemplate(): Template {
-        val s = latestState
-        val speedKph = s.speedMpsAdjusted * 3.6f
-        val distanceKm = s.distanceMeters / 1000.0
-        val timeSec = s.movingTimeMs / 1000
+        val speedKph = latestState.speedMpsAdjusted * 3.6f
+        val maxKph = latestState.maxSpeedMpsAdjusted * 3.6f
+        val distanceKm = latestState.distanceMeters / 1000.0
+        val isTracking = latestState.isTracking
+
+        val row = Row.Builder()
+            .setTitle(String.format(Locale.US, "Tốc độ hiện tại: %.1f km/h", speedKph))
+            .addText(String.format(Locale.US, "Quãng đường: %.2f km | Tối đa: %.1f km/h", distanceKm, maxKph))
+            .build()
 
         val pane = Pane.Builder()
-            .addRow(
-                Row.Builder()
-                    .setTitle("Speed")
-                    .addText(String.format("%.1f km/h", speedKph))
-                    .build()
-            )
-            .addRow(
-                Row.Builder()
-                    .setTitle("Distance")
-                    .addText(String.format("%.2f km", distanceKm))
-                    .build()
-            )
-            .addRow(
-                Row.Builder()
-                    .setTitle("Moving time")
-                    .addText("${timeSec}s")
-                    .build()
-            )
+            .addRow(row)
             .build()
 
-        val contentTemplate = PaneTemplate.Builder(pane)
-            .setTitle("Speed Tracker")
-            .setHeaderAction(Action.APP_ICON)
-            .build()
-
-        val startStopAction = Action.Builder()
-            .setTitle(if (s.isTracking) "Stop" else "Start")
-            .setOnClickListener {
-                if (latestState.isTracking) {
+        val toggleAction = if (isTracking) {
+            Action.Builder()
+                .setTitle("Dừng")
+                .setOnClickListener {
                     ForegroundTrackingService.stop(carContext)
-                } else {
+                }
+                .build()
+        } else {
+            Action.Builder()
+                .setTitle("Bắt đầu")
+                .setOnClickListener {
                     ForegroundTrackingService.start(carContext)
                 }
-            }
-            .build()
+                .build()
+        }
 
         val actionStrip = ActionStrip.Builder()
-            .addAction(startStopAction)
+            .addAction(toggleAction)
             .build()
 
         return PaneTemplate.Builder(pane)
-            .setTitle("Speed Tracker")
-            .setHeaderAction(Action.APP_ICON)
+            .setTitle("MyCarApp Automotive")
             .setActionStrip(actionStrip)
             .build()
     }

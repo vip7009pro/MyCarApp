@@ -12,6 +12,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
@@ -726,11 +730,72 @@ private fun LiveHudScreen(
     onStartStop: () -> Unit,
     onToggleHudMode: () -> Unit
 ) {
+    val context = LocalContext.current
+    val settingsStore = remember { AppSettingsStore(context) }
+    val hudBrightnessPercent by settingsStore.hudBrightnessPercent.collectAsStateWithLifecycle()
+    val hudAutoAmbientLight by settingsStore.hudAutoAmbientLight.collectAsStateWithLifecycle()
+
     var isFlipHorizontal by remember { mutableStateOf(true) }
     var isFlipVertical by remember { mutableStateOf(false) }
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    DisposableEffect(hudBrightnessPercent, hudAutoAmbientLight) {
+        val window = (context as? ComponentActivity)?.window
+        if (window == null) {
+            onDispose {}
+        } else {
+            var currentLux = 500f
+
+            fun updateWindowBrightness(lux: Float) {
+                val baseRatio = (hudBrightnessPercent / 100f).coerceIn(0.1f, 1.0f)
+                val finalRatio = if (hudAutoAmbientLight) {
+                    val factor = when {
+                        lux < 20f -> 0.75f
+                        lux < 100f -> 0.85f
+                        lux < 500f -> 0.95f
+                        else -> 1.0f
+                    }
+                    (baseRatio * factor).coerceIn(0.15f, 1.0f)
+                } else {
+                    baseRatio
+                }
+
+                val lp = window.attributes
+                lp.screenBrightness = finalRatio
+                window.attributes = lp
+            }
+
+            updateWindowBrightness(currentLux)
+
+            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+            val lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
+
+            var listener: SensorEventListener? = null
+            if (hudAutoAmbientLight && sensorManager != null && lightSensor != null) {
+                listener = object : SensorEventListener {
+                    override fun onSensorChanged(event: SensorEvent?) {
+                        val lux = event?.values?.getOrNull(0) ?: return
+                        currentLux = lux
+                        updateWindowBrightness(lux)
+                    }
+
+                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                }
+                sensorManager.registerListener(listener, lightSensor, SensorManager.SENSOR_DELAY_UI)
+            }
+
+            onDispose {
+                if (listener != null && sensorManager != null) {
+                    sensorManager.unregisterListener(listener)
+                }
+                val lp = window.attributes
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                window.attributes = lp
+            }
+        }
+    }
 
     val timeSec = movingTimeMs / 1000
     val hh = timeSec / 3600
@@ -1304,6 +1369,8 @@ private fun SettingsScreen(
 
     val autoStartOnOpen by settingsStore.autoStartOnOpen.collectAsStateWithLifecycle()
     val keepScreenOn by settingsStore.keepScreenOn.collectAsStateWithLifecycle()
+    val hudBrightnessPercent by settingsStore.hudBrightnessPercent.collectAsStateWithLifecycle()
+    val hudAutoAmbientLight by settingsStore.hudAutoAmbientLight.collectAsStateWithLifecycle()
     val speedOffsetKph by settingsStore.speedOffsetKph.collectAsStateWithLifecycle()
     val bluetoothEnabled by settingsStore.bluetoothEnabled.collectAsStateWithLifecycle()
     val wifiEnabled by settingsStore.wifiEnabled.collectAsStateWithLifecycle()
@@ -1559,7 +1626,89 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 2: Auto start on open
+        // Setting 2: HUD Screen Brightness Control
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Độ sáng Màn hình HUD",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "$hudBrightnessPercent%",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Tăng độ sáng màn hình khi bật HUD để hình ảnh phản chiếu trên kính lái rõ ràng nhất.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                    )
+
+                    Slider(
+                        value = hudBrightnessPercent.toFloat(),
+                        onValueChange = { valPct ->
+                            settingsStore.setHudBrightnessPercent(valPct.toInt())
+                        },
+                        valueRange = 10f..100f,
+                        steps = 18
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Tự động điều chỉnh theo Cảm biến Ánh sáng",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Tự động tăng/giảm độ sáng dựa trên mức tiêu chuẩn và cảm biến ánh sáng môi trường.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = hudAutoAmbientLight,
+                            onCheckedChange = { checked ->
+                                settingsStore.setHudAutoAmbientLight(checked)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Setting 3: Auto start on open
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1598,7 +1747,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 3: Speed Offset Slider
+        // Setting 4: Speed Offset Slider
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1708,7 +1857,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 4: Bluetooth Auto Start / Stop
+        // Setting 5: Bluetooth Auto Start / Stop
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1885,7 +2034,7 @@ private fun SettingsScreen(
             }
         }
 
-        // Setting 5: Wi-Fi Auto Start / Stop (Condition OR)
+        // Setting 6: Wi-Fi Auto Start / Stop (Condition OR)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),

@@ -14,6 +14,12 @@ class AppSettingsStore(context: Context) {
     private val _keepScreenOn = MutableStateFlow(prefs.getBoolean("keep_screen_on", true))
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn
 
+    private val _hudBrightnessPercent = MutableStateFlow(prefs.getInt("hud_brightness_percent", 100))
+    val hudBrightnessPercent: StateFlow<Int> = _hudBrightnessPercent
+
+    private val _hudAutoAmbientLight = MutableStateFlow(prefs.getBoolean("hud_auto_ambient_light", true))
+    val hudAutoAmbientLight: StateFlow<Boolean> = _hudAutoAmbientLight
+
     private val _speedOffsetKph = MutableStateFlow(prefs.getFloat("speed_offset_kph", 0f))
     val speedOffsetKph: StateFlow<Float> = _speedOffsetKph
 
@@ -49,6 +55,17 @@ class AppSettingsStore(context: Context) {
     fun setKeepScreenOn(value: Boolean) {
         _keepScreenOn.value = value
         prefs.edit().putBoolean("keep_screen_on", value).apply()
+    }
+
+    fun setHudBrightnessPercent(value: Int) {
+        val clamped = value.coerceIn(10, 100)
+        _hudBrightnessPercent.value = clamped
+        prefs.edit().putInt("hud_brightness_percent", clamped).apply()
+    }
+
+    fun setHudAutoAmbientLight(value: Boolean) {
+        _hudAutoAmbientLight.value = value
+        prefs.edit().putBoolean("hud_auto_ambient_light", value).apply()
     }
 
     fun setSpeedOffsetKph(value: Float) {
